@@ -1,0 +1,199 @@
+# Coding Agent Configuration File
+# Copy to config.yaml and customize for your setup
+
+# Ollama Configuration
+ollama:
+  base_url: "http://localhost:11434"
+  timeout: 300
+  max_retries: 3
+
+# Model Selection (in order of preference)
+# The agent will automatically select the best available model for each task
+models:
+  # High reasoning tasks (complex analysis, debugging)
+  high_reasoning:
+    - "qwen2.5-coder:32b"
+    - "deepseek-coder:33b"
+    - "codestral:22b"
+    - "qwen2.5-coder:14b"
+    - "qwen2.5-coder:7b"
+  
+  # Fast completion tasks (simple queries, quick responses)
+  fast_completion:
+    - "qwen2.5-coder:7b"
+    - "qwen2.5-coder:1.5b"
+    - "phi3:mini"
+    - "codegemma:2b"
+  
+  # Analysis tasks (code review, planning)
+  analysis:
+    - "qwen2.5-coder:14b"
+    - "qwen2.5-coder:7b"
+    - "deepseek-coder:6.7b"
+  
+  # Chat tasks (general conversation)
+  chat:
+    - "qwen2.5-coder:7b"
+    - "llama3.1:8b"
+    - "phi3:medium"
+
+# Safety and Security Settings
+safety:
+  # Maximum file size to process (MB)
+  max_file_size_mb: 10
+  
+  # Paths that are restricted from access
+  restricted_paths:
+    - "/etc"
+    - "/sys"
+    - "/proc"
+    - "/root"
+    - "~/.ssh"
+    - "~/.aws"
+  
+  # Commands that require confirmation
+  dangerous_commands:
+    - "rm -rf"
+    - "sudo"
+    - "format"
+    - "del /f"
+    - "shutdown"
+    - "reboot"
+  
+  # File extensions to handle with care
+  sensitive_extensions:
+    - ".key"
+    - ".pem"
+    - ".p12"
+    - ".env"
+    - ".secret"
+  
+  # Enable safety checks
+  enable_path_validation: true
+  enable_command_validation: true
+  enable_content_scanning: true
+
+# Agent Behavior Configuration
+agent:
+  # Maximum tool execution iterations per request
+  max_iterations: 10
+  
+  # Context window size (tokens)
+  context_window: 8192
+  
+  # Memory limit for context storage (MB)
+  memory_limit_mb: 500
+  
+  # Auto-save conversation sessions
+  auto_save_session: true
+  
+  # Session storage directory
+  session_dir: "sessions"
+  
+  # Enable learning from interactions
+  enable_learning: true
+  
+  # Learning storage directory
+  learning_dir: "memory"
+
+# Tool Configuration
+tools:
+  file_tool:
+    enabled: true
+    max_file_size_mb: 10
+    allowed_extensions: [".py", ".js", ".ts", ".java", ".cpp", ".c", ".go", ".rs", ".rb", ".php", ".html", ".css", ".sql", ".sh", ".md", ".txt", ".json", ".yaml", ".toml", ".xml"]
+  
+  git_tool:
+    enabled: true
+    auto_add_gitignore: true
+    require_commit_message: true
+  
+  search_tool:
+    enabled: true
+    max_results: 50
+    context_lines: 3
+    exclude_patterns: ["*.pyc", "*.log", ".git/*", "node_modules/*", "__pycache__/*"]
+  
+  refactor_tool:
+    enabled: true
+    backup_before_refactor: true
+    validate_syntax_after: true
+  
+  debug_tool:
+    enabled: true
+    enable_linting: true
+    auto_fix_simple_issues: false
+
+# Logging Configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "logs/agent.log"
+  max_size_mb: 100
+  backup_count: 5
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Performance Settings
+performance:
+  # Enable parallel tool execution where safe
+  parallel_execution: true
+  
+  # Cache frequently accessed files
+  enable_file_cache: true
+  cache_size_mb: 100
+  
+  # Model switching thresholds
+  switch_to_fast_model_after_seconds: 30
+  switch_to_high_reasoning_for_complex_tasks: true
+
+# Integration Settings
+integrations:
+  # Future provider support
+  openai:
+    enabled: false
+    api_key: null  # Set via environment variable OPENAI_API_KEY
+    model: "gpt-4"
+  
+  anthropic:
+    enabled: false
+    api_key: null  # Set via environment variable ANTHROPIC_API_KEY
+    model: "claude-3-sonnet"
+  
+  # IDE integrations
+  vscode:
+    enabled: false
+    extension_path: null
+  
+  # External tools
+  linters:
+    python: ["flake8", "black", "ruff"]
+    javascript: ["eslint", "prettier"]
+    typescript: ["tslint", "prettier"]
+
+# Collaboration Features
+collaboration:
+  # Enable session sharing
+  enable_sharing: false
+  
+  # Export formats
+  export_formats: ["json", "markdown", "html"]
+  
+  # Handoff information
+  handoff:
+    include_context: true
+    include_history: true
+    include_project_state: true
+    format: "markdown"
+
+# Experimental Features
+experimental:
+  # Advanced context understanding
+  deep_context_analysis: false
+  
+  # Multi-agent coordination
+  multi_agent_mode: false
+  
+  # Automated testing
+  auto_generate_tests: false
+  
+  # Code quality metrics
+  quality_scoring: false
