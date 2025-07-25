@@ -1,3 +1,7 @@
 *opencode.json
 .opencode/
 opencode.json
+config.yaml
+.venv/
+sessions/
+*__pycache__/
