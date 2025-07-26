@@ -101,24 +101,20 @@ class AgentOrchestrator:
             result = await self._ask_clarification(user_input, task_plan, task_complexity)
         elif task_plan.get("requires_tools", False):
             print("🔍 DEBUG: Taking tools path")
-            # Create execution plan for complex tasks
-            if task_plan.get("complexity") in ["medium", "high"]:
-                print("🔍 DEBUG: Using planned task execution")
-                
-                # Use execution_steps if available, otherwise create plan normally
-                if task_plan.get("execution_steps"):
-                    plan = await self._create_plan_from_execution_steps(user_input, task_plan)
-                else:
-                    plan = await self.task_planner.create_plan(user_input, {
-                        "project_context": self.context.project_context,
-                        "conversation_history": self.context.conversation_history
-                    })
-                self.current_plan_id = plan.id
-                result = await self._execute_planned_task(plan, task_complexity)
+            # Create execution plan for all tasks (regardless of complexity)
+            print("🔍 DEBUG: Using planned task execution")
+            
+            # Use execution_steps if available, otherwise create plan normally
+            if task_plan.get("execution_steps"):
+                plan = await self._create_plan_from_execution_steps(user_input, task_plan)
             else:
-                print("🔍 DEBUG: Using direct tool execution")
-                # Execute simple tool operations directly
-                result = await self._execute_with_tools(task_plan, task_complexity)
+                plan = await self.task_planner.create_plan(user_input, {
+                    "project_context": self.context.project_context,
+                    "conversation_history": self.context.conversation_history,
+                    "user_request": user_input
+                })
+            self.current_plan_id = plan.id
+            result = await self._execute_planned_task(plan, task_complexity)
         else:
             print("🔍 DEBUG: Taking simple response path (no tools)")
             # Simple LLM response with intelligent model routing
@@ -175,15 +171,15 @@ class AgentOrchestrator:
         print(directive_message)
         print("=" * 60)
         
-        # Include project context in analysis
-        project_context = self.get_project_summary()
+        # Include full context in analysis
+        full_context = self._get_full_context()
         
         messages = [
             ChatMessage(
                 role="system", 
                 content=f"""You are a coding agent analyzer. Analyze the user request and provide a task plan.
 
-{project_context}
+{full_context}
 
 CRITICAL INSTRUCTIONS:
 - Respond ONLY with valid JSON
@@ -199,13 +195,23 @@ CRITICAL INSTRUCTIONS:
         model_config = ModelConfig(
             model_name=self._select_model("analysis"),
             temperature=0.1,
-            max_tokens=800  # Reduced to prevent long responses with thinking tags
+            max_tokens=1500  # Increased to allow longer valid JSON responses
         )
         
         response = await self.provider.chat_completion(messages, model_config)
         
         print(f"🔍 DEBUG: Raw analysis response: {response.content}")
         print(f"🔍 DEBUG: Response length: {len(response.content)} characters")
+        
+        # Debug: Check if response starts with valid JSON
+        if response.content.strip().startswith('{'):
+            print("🔍 DEBUG: Response starts with '{' - likely valid JSON")
+            # Show first and last 200 characters to identify issues
+            content = response.content.strip()
+            print(f"🔍 DEBUG: First 200 chars: {content[:200]}")
+            print(f"🔍 DEBUG: Last 200 chars: {content[-200:]}")
+        else:
+            print("🔍 DEBUG: Response does NOT start with '{' - contains extra text")
         
         # Try to parse JSON with multiple strategies
         parsed_json = self._parse_analysis_json(response.content)
@@ -225,48 +231,96 @@ CRITICAL INSTRUCTIONS:
         try:
             parsed = json.loads(response_content.strip())
             if self._validate_analysis_format(parsed):
+                print("🔍 DEBUG: Direct JSON parsing succeeded")
                 return parsed
-        except json.JSONDecodeError:
-            pass
+            else:
+                print("🔍 DEBUG: Direct JSON parsing succeeded but validation failed")
+                print(f"🔍 DEBUG: Missing fields: {[field for field in ['requires_tools', 'tools_needed', 'complexity'] if field not in parsed]}")
+        except json.JSONDecodeError as e:
+            print(f"🔍 DEBUG: Direct JSON parsing failed: {e}")
+            
+        # Strategy 1.5: Try parsing after removing any trailing text
+        lines = response_content.strip().split('\n')
+        for i in range(len(lines), 0, -1):
+            try:
+                candidate = '\n'.join(lines[:i]).strip()
+                if candidate.startswith('{') and candidate.endswith('}'):
+                    parsed = json.loads(candidate)
+                    if self._validate_analysis_format(parsed):
+                        print(f"🔍 DEBUG: Line-by-line parsing succeeded at line {i}")
+                        return parsed
+            except json.JSONDecodeError:
+                continue
         
-        # Strategy 2: Extract JSON from mixed content
+        # Strategy 2: Extract JSON from mixed content with improved patterns
         json_patterns = [
-            # Look for JSON object with analysis fields
-            r'(\{[^{}]*"requires_tools"[^{}]*\})',
-            # More complex nested JSON
-            r'(\{(?:[^{}]|\{[^{}]*\})*"requires_tools"(?:[^{}]|\{[^{}]*\})*\})',
-            # JSON code blocks
+            # JSON code blocks first
             r'```json\s*(\{.*?\})\s*```',
             r'```\s*(\{.*?\})\s*```',
-            # Last resort: any JSON object
-            r'(\{.*\})'
+            # Simple approach: find the largest complete JSON object
+            r'(\{.*\})',
+            # Fallback: any JSON-like structure
+            r'(\{[^}]*\})'
         ]
         
-        for pattern in json_patterns:
-            matches = re.findall(pattern, response_content, re.DOTALL)
-            for match in matches:
+        for i, pattern in enumerate(json_patterns):
+            matches = re.findall(pattern, response_content, re.DOTALL | re.MULTILINE)
+            print(f"🔍 DEBUG: Pattern {i+1} found {len(matches)} matches")
+            for j, match in enumerate(matches):
                 try:
-                    parsed = json.loads(match.strip())
+                    # Clean up the match
+                    clean_match = match.strip()
+                    if not clean_match:
+                        continue
+                    
+                    # Fix common JSON escaping issues
+                    fixed_match = self._fix_json_escaping(clean_match)
+                    
+                    parsed = json.loads(fixed_match)
                     if self._validate_analysis_format(parsed):
-                        print(f"🔍 DEBUG: Extracted JSON using pattern: {pattern[:30]}...")
+                        print(f"🔍 DEBUG: Extracted JSON using pattern {i+1}, match {j+1}")
                         return parsed
-                except json.JSONDecodeError:
-                    continue
+                    else:
+                        print(f"🔍 DEBUG: Valid JSON but invalid format for pattern {i+1}, match {j+1}")
+                except json.JSONDecodeError as e:
+                    print(f"🔍 DEBUG: JSON decode error for pattern {i+1}, match {j+1}: {e}")
+                    # Try the original match without fixing
+                    try:
+                        parsed = json.loads(clean_match)
+                        if self._validate_analysis_format(parsed):
+                            print(f"🔍 DEBUG: Original match worked for pattern {i+1}, match {j+1}")
+                            return parsed
+                    except json.JSONDecodeError:
+                        continue
         
         # Strategy 3: Try to fix truncated JSON
-        if response_content.strip().startswith('{') and not response_content.strip().endswith('}'):
-            print("🔍 DEBUG: Attempting to fix truncated JSON")
-            # Try adding closing brace
-            try:
-                fixed_json = response_content.strip() + '}'
-                parsed = json.loads(fixed_json)
-                if self._validate_analysis_format(parsed):
-                    return parsed
-            except json.JSONDecodeError:
-                # Try adding more closing braces for nested structures
-                for i in range(2, 5):
+        if response_content.strip().startswith('{'):
+            print("🔍 DEBUG: Attempting to fix potentially truncated JSON")
+            
+            # First try: see if it's just missing closing braces
+            content = response_content.strip()
+            if not content.endswith('}'):
+                # Count opening vs closing braces
+                open_braces = content.count('{')
+                close_braces = content.count('}')
+                missing_braces = open_braces - close_braces
+                
+                print(f"🔍 DEBUG: Open braces: {open_braces}, Close braces: {close_braces}, Missing: {missing_braces}")
+                
+                if missing_braces > 0:
                     try:
-                        fixed_json = response_content.strip() + '}' * i
+                        fixed_json = content + '}' * missing_braces
+                        parsed = json.loads(fixed_json)
+                        if self._validate_analysis_format(parsed):
+                            print(f"🔍 DEBUG: Fixed truncated JSON by adding {missing_braces} closing braces")
+                            return parsed
+                    except json.JSONDecodeError as e:
+                        print(f"🔍 DEBUG: Failed to fix with calculated braces: {e}")
+                
+                # Try adding 1-5 braces as fallback
+                for i in range(1, 6):
+                    try:
+                        fixed_json = content + '}' * i
                         parsed = json.loads(fixed_json)
                         if self._validate_analysis_format(parsed):
                             print(f"🔍 DEBUG: Fixed truncated JSON with {i} closing braces")
@@ -274,7 +328,29 @@ CRITICAL INSTRUCTIONS:
                     except json.JSONDecodeError:
                         continue
         
+        print("🔍 DEBUG: All JSON parsing strategies failed")
         return None
+    
+    def _fix_json_escaping(self, json_str: str) -> str:
+        """Fix common JSON escaping issues"""
+        # Fix unescaped backslashes in regex patterns
+        # Replace single backslashes with double backslashes in string values
+        import re
+        
+        # Find all string values and fix backslashes inside them
+        def fix_string_escapes(match):
+            full_match = match.group(0)
+            string_content = match.group(1)
+            
+            # Fix common regex patterns
+            fixed_content = string_content.replace('\\', '\\\\')
+            
+            return f'"{fixed_content}"'
+        
+        # Pattern to match quoted strings
+        fixed_json = re.sub(r'"([^"]*\\[^"]*)"', fix_string_escapes, json_str)
+        
+        return fixed_json
     
     def _validate_analysis_format(self, data: Dict[str, Any]) -> bool:
         """Validate if JSON has the expected analysis format"""
@@ -444,9 +520,42 @@ CRITICAL INSTRUCTIONS:
                 "requires_user_input": task_plan.get("needs_clarification", False),
                 "can_be_paused": True,
                 "tools_needed": task_plan.get("tools_needed", []),
-                "source": "analysis_execution_steps"
+                "source": "analysis_execution_steps",
+                "user_request": user_input
             }
         )
+        
+        # Check if we should add a summary step for analysis tasks
+        tools_needed = task_plan.get("tools_needed", [])
+        user_request_lower = user_input.lower()
+        analysis_keywords = ["analysis", "analyze", "summary", "summarize", "explain", "understand", "describe", "overview", "what", "how"]
+        
+        should_add_summary = (
+            any(word in user_request_lower for word in analysis_keywords) or
+            ("file" in tools_needed and "search" in tools_needed)
+        )
+        
+        if should_add_summary:
+            # Add summary step
+            step_counter = len(steps) + 1
+            summary_step = TaskStep(
+                id=f"step_{step_counter}",
+                description="Generate comprehensive summary of findings",
+                tool="summary",
+                parameters={
+                    "task_description": user_input,
+                    "focus": "overview"
+                },
+                dependencies=[steps[-1].id] if steps else [],
+                status=TaskStatus.PENDING,
+                estimated_duration=15
+            )
+            steps.append(summary_step)
+            print(f"🔍 DEBUG: Added summary step for analysis task")
+        
+        # Update the plan with potentially additional steps
+        plan.steps = steps
+        plan.total_estimated_duration = len(steps) * 30
         
         # Register with task planner
         self.task_planner.active_plans[plan_id] = plan
@@ -460,7 +569,7 @@ CRITICAL INSTRUCTIONS:
         user_lower = user_input.lower()
         
         if tool == "search":
-            # Extract search terms
+            # Extract search terms and determine search type
             if "find" in user_lower:
                 search_term = user_input.split("find")[-1].strip()
             elif "search" in user_lower:
@@ -468,9 +577,24 @@ CRITICAL INSTRUCTIONS:
             else:
                 search_term = user_input
             
+            # Determine if this should be a filename search
+            filename_indicators = [
+                "main", "app", "entry", "index", "__init__", 
+                "config", "setup", "start", ".py", ".js", ".ts"
+            ]
+            
+            search_type = "text"
+            if any(indicator in search_term.lower() for indicator in filename_indicators):
+                search_type = "filename"
+                # For common file searches, use better patterns
+                if any(word in search_term.lower() for word in ["main", "entry", "app"]):
+                    search_term = "main.py|app.py|index.py|start.py"
+                elif "__init__" in search_term.lower():
+                    search_term = "__init__.py"
+            
             return {
                 "query": search_term,
-                "search_type": "text"
+                "search_type": search_type
             }
         
         elif tool == "file":
@@ -480,7 +604,7 @@ CRITICAL INSTRUCTIONS:
             elif any(word in user_lower for word in ["write", "create", "edit"]):
                 return {"action": "write", "path": "determined_at_runtime"}
             else:
-                return {"action": "list_directory", "path": "."}
+                return {"action": "list", "path": "."}
         
         elif tool == "git":
             if "status" in user_lower:
@@ -549,22 +673,9 @@ CRITICAL INSTRUCTIONS:
                 search_type = parameters["type"]
             
             # Validate and fix search_type
-            valid_search_types = ["text", "regex", "function", "class", "import"]
+            valid_search_types = ["text", "regex", "function", "class", "import", "filename"]
             if search_type in valid_search_types:
                 fixed_params["search_type"] = search_type
-            elif search_type == "filename":
-                # Convert filename search to text search with appropriate file pattern
-                fixed_params["search_type"] = "text"
-                # Use the query as a file pattern if it looks like a filename pattern
-                query = parameters.get("query", "main")
-                if "|" in query or "*" in query or "." in query:
-                    # Complex pattern - use as file_pattern and search for common content
-                    fixed_params["file_pattern"] = f"*{query.replace('|', '*')}*"
-                    fixed_params["query"] = "def|class|import|function"  # Search for code patterns
-                else:
-                    # Simple filename - search in filenames
-                    fixed_params["file_pattern"] = f"*{query}*"
-                    fixed_params["query"] = query
             elif search_type == "pattern":
                 fixed_params["search_type"] = "regex"
             elif search_type == "code":
@@ -616,6 +727,10 @@ CRITICAL INSTRUCTIONS:
                 # Fix specific invalid actions
                 if action == "list_structure":
                     fixed_params["action"] = "list"
+                elif action == "list_directory":
+                    fixed_params["action"] = "list"
+                elif action == "list_files":
+                    fixed_params["action"] = "list"
                 else:
                     fixed_params["action"] = action
             elif "operation" in parameters:
@@ -639,6 +754,31 @@ CRITICAL INSTRUCTIONS:
             
             # Copy other valid parameters
             for param in ["content", "encoding"]:
+                if param in parameters:
+                    fixed_params[param] = parameters[param]
+            
+            return fixed_params
+        
+        elif tool == "summary":
+            # Summary tool expects: task_description, collected_data, context, focus
+            fixed_params = {}
+            
+            # Handle task_description
+            if "task_description" in parameters:
+                fixed_params["task_description"] = parameters["task_description"]
+            elif "task" in parameters:
+                fixed_params["task_description"] = parameters["task"]
+            else:
+                fixed_params["task_description"] = "determined_at_runtime"
+            
+            # Handle focus parameter
+            if "focus" in parameters:
+                fixed_params["focus"] = parameters["focus"]
+            else:
+                fixed_params["focus"] = "overview"
+            
+            # Copy other valid parameters
+            for param in ["collected_data", "context"]:
                 if param in parameters:
                     fixed_params[param] = parameters[param]
             
@@ -891,8 +1031,10 @@ Set needs_clarification to true when:
             try:
                 # Execute the step
                 if next_step.tool in self.tools:
-                    print(f"🔍 DEBUG: Executing tool '{next_step.tool}' with parameters: {next_step.parameters}")
-                    tool_result = await self.tools[next_step.tool].execute(**next_step.parameters)
+                    # Resolve dynamic parameters from previous step results
+                    resolved_params = self._resolve_step_parameters(next_step.parameters, plan)
+                    print(f"🔍 DEBUG: Executing tool '{next_step.tool}' with resolved parameters: {resolved_params}")
+                    tool_result = await self.tools[next_step.tool].execute(**resolved_params)
                     
                     if tool_result.success:
                         self.task_planner.update_step_status(
@@ -915,8 +1057,43 @@ Set needs_clarification to true when:
                         print(f"🔍 DEBUG: Tool execution failed - Tool: {next_step.tool}, Params: {next_step.parameters}, Error: {tool_result.error}")
                 else:
                     print(f"🔍 DEBUG: Tool '{next_step.tool}' not found in available tools: {list(self.tools.keys())}")
+                    
+                    # Check if it's the summary tool and needs LLM provider
+                    if next_step.tool == "summary":
+                        # Create and add summary tool with LLM provider
+                        from .tools.summary_tool import SummaryTool
+                        summary_tool = SummaryTool(llm_provider=self.provider)
+                        self.tools["summary"] = summary_tool
+                        
+                        # Now execute it
+                        summary_data = self._collect_plan_results(plan)
+                        summary_params = {
+                            **next_step.parameters,
+                            "collected_data": summary_data,
+                            "context": {"project_context": self.get_project_summary()},
+                            "task_description": plan.description
+                        }
+                        
+                        print(f"🔍 DEBUG: Generating summary with data from {len(summary_data)} sources")
+                        summary_result = await summary_tool.execute(**summary_params)
+                        
+                        if summary_result.success:
+                            self.task_planner.update_step_status(
+                                plan.id, next_step.id, TaskStatus.COMPLETED,
+                                result=summary_result.data
+                            )
+                            results.append(f"📝 **Summary Generated**")
+                            if summary_result.content:
+                                results.append(f"\n{summary_result.content}")
+                        else:
+                            self.task_planner.update_step_status(
+                                plan.id, next_step.id, TaskStatus.FAILED,
+                                error=summary_result.error
+                            )
+                            results.append(f"❌ Summary generation failed: {summary_result.error}")
+                    
                     # Handle special steps
-                    if next_step.tool == "context":
+                    elif next_step.tool == "context":
                         # Context gathering step
                         context_summary = self.get_project_summary()
                         self.task_planner.update_step_status(
@@ -941,6 +1118,35 @@ Set needs_clarification to true when:
                             result={"progress": progress}
                         )
                         results.append(f"📊 **Final Status:** {progress['progress_percentage']:.1f}% complete")
+                    
+                    elif next_step.tool == "summary":
+                        # Summary generation step - collect all previous results
+                        summary_data = self._collect_plan_results(plan)
+                        summary_params = {
+                            **next_step.parameters,
+                            "collected_data": summary_data,
+                            "context": {"project_context": self.get_project_summary()},
+                            "task_description": plan.description  # Use the actual plan description
+                        }
+                        
+                        print(f"🔍 DEBUG: Generating summary with data from {len(summary_data)} sources")
+                        summary_result = await self.tools[next_step.tool].execute(**summary_params)
+                        
+                        if summary_result.success:
+                            self.task_planner.update_step_status(
+                                plan.id, next_step.id, TaskStatus.COMPLETED,
+                                result=summary_result.data
+                            )
+                            results.append(f"📝 **Summary Generated**")
+                            # Add the actual summary content to results
+                            if summary_result.content:
+                                results.append(f"\n{summary_result.content}")
+                        else:
+                            self.task_planner.update_step_status(
+                                plan.id, next_step.id, TaskStatus.FAILED,
+                                error=summary_result.error
+                            )
+                            results.append(f"❌ Summary generation failed: {summary_result.error}")
             
             except Exception as e:
                 self.task_planner.update_step_status(
@@ -1104,6 +1310,126 @@ Set needs_clarification to true when:
             context_text += "\n- Git repository: Yes"
         
         return context_text
+    
+    def _get_full_context(self) -> str:
+        """Get comprehensive context including project, conversation, and current tasks"""
+        context_parts = []
+        
+        # Project context
+        project_summary = self.get_project_summary()
+        context_parts.append(project_summary)
+        
+        # Recent conversation history (last 3 exchanges)
+        if self.context.conversation_history:
+            recent_messages = self.context.conversation_history[-6:]  # Last 3 exchanges (user+assistant pairs)
+            if recent_messages:
+                context_parts.append("\nRecent Conversation:")
+                for i, msg in enumerate(recent_messages):
+                    role_display = "User" if msg.role == "user" else "Assistant"
+                    content_preview = msg.content[:100] + "..." if len(msg.content) > 100 else msg.content
+                    context_parts.append(f"- {role_display}: {content_preview}")
+        
+        # Active tasks and current plan
+        if self.context.active_tasks:
+            context_parts.append(f"\nActive Tasks: {len(self.context.active_tasks)} tasks")
+        
+        if self.current_plan_id:
+            plan_progress = self.task_planner.get_plan_progress(self.current_plan_id)
+            if plan_progress:
+                context_parts.append(f"Current Plan: {plan_progress['title']} ({plan_progress['progress_percentage']:.0f}% complete)")
+        
+        # Available tools
+        if self.tools:
+            context_parts.append(f"\nAvailable Tools: {', '.join(self.tools.keys())}")
+        
+        # Session context
+        if hasattr(self, 'session_data') and self.session_data:
+            context_parts.append(f"Session: {len(self.session_data)} data points")
+        
+        return "\n".join(context_parts)
+    
+    def _resolve_step_parameters(self, parameters: Dict[str, Any], plan: TaskPlan) -> Dict[str, Any]:
+        """Resolve dynamic parameters using results from previous steps"""
+        resolved_params = {}
+        
+        for key, value in parameters.items():
+            if isinstance(value, str) and value.startswith('{{') and value.endswith('}}'):
+                # Extract placeholder name
+                placeholder = value[2:-2].strip()
+                
+                # Resolve common placeholders
+                if placeholder == "search_result":
+                    # Find the most recent search result
+                    search_result = self._get_latest_search_result(plan)
+                    if search_result:
+                        resolved_params[key] = search_result
+                    else:
+                        # Fallback to a reasonable default
+                        resolved_params[key] = "src/main.py"
+                        print(f"🔧 DEBUG: No search result found, using fallback: src/main.py")
+                
+                elif placeholder.startswith("step_") and placeholder.endswith("_result"):
+                    # Get result from specific step
+                    step_id = placeholder.replace("_result", "")
+                    step_result = self._get_step_result(plan, step_id)
+                    if step_result:
+                        resolved_params[key] = step_result
+                    else:
+                        resolved_params[key] = value  # Keep original if can't resolve
+                
+                else:
+                    # Unknown placeholder, keep original
+                    resolved_params[key] = value
+                    print(f"🔧 DEBUG: Unknown placeholder '{placeholder}', keeping original value")
+            
+            else:
+                # Not a placeholder, keep as-is
+                resolved_params[key] = value
+        
+        return resolved_params
+    
+    def _get_latest_search_result(self, plan: TaskPlan) -> Optional[str]:
+        """Get the most recent search result from completed steps"""
+        for step in reversed(plan.steps):
+            if step.tool == "search" and step.status == TaskStatus.COMPLETED and step.result:
+                # Extract file path from search results
+                if isinstance(step.result, dict):
+                    results = step.result.get('results', [])
+                    if results and len(results) > 0:
+                        # Return the first result file path
+                        first_result = results[0]
+                        if isinstance(first_result, dict):
+                            return first_result.get('file', first_result.get('path'))
+                        elif isinstance(first_result, str):
+                            return first_result
+                
+                # Fallback: try to extract from data field
+                if hasattr(step, 'result') and isinstance(step.result, dict):
+                    data = step.result.get('data', {})
+                    if isinstance(data, dict):
+                        results = data.get('results', [])
+                        if results:
+                            return results[0] if isinstance(results[0], str) else str(results[0])
+        
+        return None
+    
+    def _get_step_result(self, plan: TaskPlan, step_id: str) -> Optional[Any]:
+        """Get result from a specific step"""
+        for step in plan.steps:
+            if step.id == step_id and step.status == TaskStatus.COMPLETED:
+                return step.result
+        return None
+    
+    def _collect_plan_results(self, plan: TaskPlan) -> Dict[str, Any]:
+        """Collect all results from completed steps in the plan"""
+        collected_data = {}
+        
+        for step in plan.steps:
+            if step.status == TaskStatus.COMPLETED and step.result:
+                step_key = f"{step.tool}_{step.id}"
+                collected_data[step_key] = step.result
+        
+        return collected_data
     
     def clear_conversation_history(self) -> None:
         """Clear conversation history"""

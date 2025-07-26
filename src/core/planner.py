@@ -169,7 +169,7 @@ class TaskPlanner:
         
         return analysis
     
-    async def _generate_steps(self, analysis: Dict[str, Any], _context: Dict[str, Any]) -> List[TaskStep]:
+    async def _generate_steps(self, analysis: Dict[str, Any], context: Dict[str, Any]) -> List[TaskStep]:
         """Generate concrete steps based on analysis"""
         
         steps: List[TaskStep] = []
@@ -250,6 +250,34 @@ class TaskPlanner:
                 {"action": "verify_changes"},
                 dependencies=[step.id for step in steps[-2:]],
                 duration=20
+            ))
+        
+        # Add summary step for analysis tasks
+        # Check both the analysis title and the original user request
+        title_text = analysis.get("title", "").lower()
+        user_request = context.get("user_request", "").lower() if context else ""
+        
+        analysis_keywords = ["analysis", "analyze", "summary", "summarize", "explain", "understand", "describe", "overview", "what", "how"]
+        
+        should_add_summary = (
+            any(word in title_text for word in analysis_keywords) or
+            any(word in user_request for word in analysis_keywords) or
+            # Also add summary if we're working with files and searching (likely analysis)
+            ("file" in analysis.get("tools_needed", []) and "search" in analysis.get("tools_needed", [])) or
+            # Check if tools_needed from context analysis indicate analysis work
+            (tools_needed and "file" in tools_needed and "search" in tools_needed)
+        )
+        
+        if should_add_summary:
+            steps.append(create_step(
+                "Generate comprehensive summary of findings",
+                "summary",
+                {
+                    "task_description": "determined_at_runtime",
+                    "focus": "overview"
+                },
+                dependencies=[step.id for step in steps[-2:]] if len(steps) >= 2 else [steps[-1].id] if steps else [],
+                duration=15
             ))
         
         # Add final reporting step

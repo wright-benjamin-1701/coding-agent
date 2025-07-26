@@ -25,7 +25,7 @@ class SearchTool(BaseTool):
             ToolParameter(
                 name="search_type",
                 type="string",
-                description="Type of search: text, regex, function, class, import",
+                description="Type of search: text, regex, function, class, import, filename",
                 required=False,
                 default="text"
             ),
@@ -74,6 +74,8 @@ class SearchTool(BaseTool):
                 return await self._class_search(query, file_pattern, max_results)
             elif search_type == "import":
                 return await self._import_search(query, file_pattern, max_results)
+            elif search_type == "filename":
+                return await self._filename_search(query, file_pattern, max_results)
             else:
                 return ToolResult(success=False, error=f"Unknown search type: {search_type}")
         
@@ -284,6 +286,58 @@ class SearchTool(BaseTool):
             success=True,
             content=f"Found {found_count} imports for '{import_name}' in {len(results)} files",
             data={"results": results, "import_name": import_name, "type": "import"}
+        )
+    
+    async def _filename_search(self, query: str, file_pattern: str, max_results: int) -> ToolResult:
+        """Search for files by filename pattern"""
+        results = []
+        found_count = 0
+        
+        # Support regex patterns in filename search
+        try:
+            # If query contains regex characters, treat as regex
+            if any(char in query for char in ['|', '^', '$', '*', '+', '?', '[', ']', '(', ')']):
+                pattern = re.compile(query, re.IGNORECASE)
+                is_regex = True
+            else:
+                # Simple text search in filename
+                pattern = query.lower()
+                is_regex = False
+        except re.error:
+            # If regex compilation fails, fall back to text search
+            pattern = query.lower()
+            is_regex = False
+        
+        for file_path in self._get_matching_files(file_pattern):
+            if found_count >= max_results:
+                break
+            
+            filename = file_path.name
+            
+            # Check if filename matches
+            if is_regex:
+                if pattern.search(filename):
+                    results.append({
+                        "file": str(file_path),
+                        "filename": filename,
+                        "type": "directory" if file_path.is_dir() else "file",
+                        "size": file_path.stat().st_size if file_path.is_file() else None
+                    })
+                    found_count += 1
+            else:
+                if pattern in filename.lower():
+                    results.append({
+                        "file": str(file_path),
+                        "filename": filename,
+                        "type": "directory" if file_path.is_dir() else "file",
+                        "size": file_path.stat().st_size if file_path.is_file() else None
+                    })
+                    found_count += 1
+        
+        return ToolResult(
+            success=True,
+            content=f"Found {found_count} files matching '{query}'",
+            data={"results": results, "query": query, "type": "filename"}
         )
     
     async def _search_in_file(self, file_path: Path, query: str, context_lines: int, is_regex: bool = False) -> List[Dict[str, Any]]:
