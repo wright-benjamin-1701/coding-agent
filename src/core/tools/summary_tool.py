@@ -173,6 +173,13 @@ class SummaryTool(BaseTool):
                             debug_print(f"No file content found in file tool result: {list(data.keys())}")
                     elif is_file_analysis:
                         debug_print(f"File analysis task but {source} doesn't start with 'file_'")
+                
+                    # Also check if this data contains file content from collected_data structure
+                    # The file tool result might be stored with a different key structure
+                    if is_file_analysis and ("path" in data and "size" in data):
+                        debug_print(f"Found file metadata from {source}: {data.get('path')}")
+                        # This looks like file tool metadata, but we need the actual content
+                        # Check if there's a content field in the parent collected_data structure
                     
                     if "results" in data:
                         results = data["results"]

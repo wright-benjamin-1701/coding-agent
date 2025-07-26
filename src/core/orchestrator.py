@@ -1245,9 +1245,16 @@ Set needs_clarification to true when:
                     tool_result = await self.tools[next_step.tool].execute(**resolved_params)
                     
                     if tool_result.success:
+                        # Store both the data and content for later use by summary tool
+                        result_data = {}
+                        if tool_result.content:
+                            result_data['content'] = tool_result.content
+                        if tool_result.data:
+                            result_data.update(tool_result.data)
+                        
                         self.task_planner.update_step_status(
                             plan.id, next_step.id, TaskStatus.COMPLETED, 
-                            result=tool_result.data
+                            result=result_data if result_data else tool_result.data
                         )
                         # Show more detailed results for debugging
                         # For summary steps, show the full content instead of truncated data
