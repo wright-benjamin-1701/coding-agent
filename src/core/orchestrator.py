@@ -16,6 +16,7 @@ from .planner import get_task_planner, TaskStatus, TaskPlan
 from .collaboration import get_session_manager
 from .model_router import ModelRouter, TaskComplexity
 from .learning import get_learning_system
+from .debug import debug_print
 
 
 @dataclass
@@ -66,7 +67,7 @@ class AgentOrchestrator:
     async def process_request(self, user_input: str) -> str:
         """Process user request and coordinate response"""
         
-        print(f"🔍 DEBUG: Processing request: {user_input}")
+        debug_print(f"Processing request: {user_input}")
         
         # Add user message to conversation history
         user_message = ChatMessage(role="user", content=user_input)
@@ -97,12 +98,12 @@ class AgentOrchestrator:
         
         # Check if clarification is needed
         if task_plan.get("needs_clarification", False):
-            print("🔍 DEBUG: Taking clarification path")
+            debug_print("Taking clarification path")
             result = await self._ask_clarification(user_input, task_plan, task_complexity)
         elif task_plan.get("requires_tools", False):
-            print("🔍 DEBUG: Taking tools path")
+            debug_print("Taking tools path")
             # Create execution plan for all tasks (regardless of complexity)
-            print("🔍 DEBUG: Using planned task execution")
+            debug_print("Using planned task execution")
             
             # Use execution_steps if available, otherwise create plan normally
             if task_plan.get("execution_steps"):
@@ -116,7 +117,7 @@ class AgentOrchestrator:
             self.current_plan_id = plan.id
             result = await self._execute_planned_task(plan, task_complexity)
         else:
-            print("🔍 DEBUG: Taking simple response path (no tools)")
+            debug_print("Taking simple response path (no tools)")
             # Simple LLM response with intelligent model routing
             result = await self._simple_response(user_input, task_complexity)
         
@@ -150,7 +151,7 @@ class AgentOrchestrator:
     async def _analyze_request_with_directive(self, user_input: str) -> Dict[str, Any]:
         """Analyze user request using directive format"""
         
-        print("🔍 DEBUG: Analyzing request with directive format")
+        debug_print("Analyzing request with directive format")
         
         # Import prompt utilities
         from .prompt_utils import create_directive_user_message
@@ -166,10 +167,10 @@ class AgentOrchestrator:
         # Create directive user message
         directive_message = create_directive_user_message(user_input, tool_schemas)
         
-        print("🔍 DEBUG: Analysis directive message:")
-        print("=" * 60)
-        print(directive_message)
-        print("=" * 60)
+        debug_print("Analysis directive message:")
+        debug_print("=" * 60)
+        debug_print(directive_message)
+        debug_print("=" * 60)
         
         # Include full context in analysis
         full_context = self._get_full_context()
@@ -200,27 +201,27 @@ CRITICAL INSTRUCTIONS:
         
         response = await self.provider.chat_completion(messages, model_config)
         
-        print(f"🔍 DEBUG: Raw analysis response: {response.content}")
-        print(f"🔍 DEBUG: Response length: {len(response.content)} characters")
+        debug_print(f"Raw analysis response: {response.content}")
+        debug_print(f"Response length: {len(response.content)} characters")
         
         # Debug: Check if response starts with valid JSON
         if response.content.strip().startswith('{'):
-            print("🔍 DEBUG: Response starts with '{' - likely valid JSON")
+            debug_print("Response starts with '{' - likely valid JSON")
             # Show first and last 200 characters to identify issues
             content = response.content.strip()
-            print(f"🔍 DEBUG: First 200 chars: {content[:200]}")
-            print(f"🔍 DEBUG: Last 200 chars: {content[-200:]}")
+            debug_print(f"First 200 chars: {content[:200]}")
+            debug_print(f"Last 200 chars: {content[-200:]}")
         else:
-            print("🔍 DEBUG: Response does NOT start with '{' - contains extra text")
+            debug_print("Response does NOT start with '{' - contains extra text")
         
         # Try to parse JSON with multiple strategies
         parsed_json = self._parse_analysis_json(response.content)
         
         if parsed_json:
-            print(f"🔍 DEBUG: Successfully parsed analysis: {parsed_json}")
+            debug_print(f"Successfully parsed analysis: {parsed_json}")
             return parsed_json
         else:
-            print("🔍 DEBUG: All JSON parsing strategies failed, using intelligent fallback")
+            debug_print("All JSON parsing strategies failed, using intelligent fallback")
             # Create intelligent fallback based on content analysis
             return self._create_intelligent_fallback(user_input, response.content)
     
@@ -231,13 +232,13 @@ CRITICAL INSTRUCTIONS:
         try:
             parsed = json.loads(response_content.strip())
             if self._validate_analysis_format(parsed):
-                print("🔍 DEBUG: Direct JSON parsing succeeded")
+                debug_print("Direct JSON parsing succeeded")
                 return parsed
             else:
-                print("🔍 DEBUG: Direct JSON parsing succeeded but validation failed")
-                print(f"🔍 DEBUG: Missing fields: {[field for field in ['requires_tools', 'tools_needed', 'complexity'] if field not in parsed]}")
+                debug_print("Direct JSON parsing succeeded but validation failed")
+                debug_print(f"Missing fields: {[field for field in ['requires_tools', 'tools_needed', 'complexity'] if field not in parsed]}")
         except json.JSONDecodeError as e:
-            print(f"🔍 DEBUG: Direct JSON parsing failed: {e}")
+            debug_print(f"Direct JSON parsing failed: {e}")
             
             # Strategy 1.1: Try parsing just the JSON part if there's trailing content
             if "Extra data" in str(e):
@@ -248,7 +249,7 @@ CRITICAL INSTRUCTIONS:
                         json_part = response_content[:char_pos].strip()
                         parsed = json.loads(json_part)
                         if self._validate_analysis_format(parsed):
-                            print(f"🔍 DEBUG: Parsing succeeded by trimming at position {char_pos}")
+                            debug_print(f"Parsing succeeded by trimming at position {char_pos}")
                             return parsed
                 except (json.JSONDecodeError, AttributeError):
                     pass
@@ -268,7 +269,7 @@ CRITICAL INSTRUCTIONS:
                             json_part = content[:i+1]
                             parsed = json.loads(json_part)
                             if self._validate_analysis_format(parsed):
-                                print(f"🔍 DEBUG: Balanced brace parsing succeeded at position {i+1}")
+                                debug_print(f"Balanced brace parsing succeeded at position {i+1}")
                                 return parsed
                         except json.JSONDecodeError:
                             continue
@@ -281,7 +282,7 @@ CRITICAL INSTRUCTIONS:
                 if candidate.startswith('{') and candidate.endswith('}'):
                     parsed = json.loads(candidate)
                     if self._validate_analysis_format(parsed):
-                        print(f"🔍 DEBUG: Line-by-line parsing succeeded at line {i}")
+                        debug_print(f"Line-by-line parsing succeeded at line {i}")
                         return parsed
             except json.JSONDecodeError:
                 continue
@@ -299,7 +300,7 @@ CRITICAL INSTRUCTIONS:
         
         for i, pattern in enumerate(json_patterns):
             matches = re.findall(pattern, response_content, re.DOTALL | re.MULTILINE)
-            print(f"🔍 DEBUG: Pattern {i+1} found {len(matches)} matches")
+            debug_print(f"Pattern {i+1} found {len(matches)} matches")
             for j, match in enumerate(matches):
                 try:
                     # Clean up the match
@@ -312,24 +313,24 @@ CRITICAL INSTRUCTIONS:
                     
                     parsed = json.loads(fixed_match)
                     if self._validate_analysis_format(parsed):
-                        print(f"🔍 DEBUG: Extracted JSON using pattern {i+1}, match {j+1}")
+                        debug_print(f"Extracted JSON using pattern {i+1}, match {j+1}")
                         return parsed
                     else:
-                        print(f"🔍 DEBUG: Valid JSON but invalid format for pattern {i+1}, match {j+1}")
+                        debug_print(f"Valid JSON but invalid format for pattern {i+1}, match {j+1}")
                 except json.JSONDecodeError as e:
-                    print(f"🔍 DEBUG: JSON decode error for pattern {i+1}, match {j+1}: {e}")
+                    debug_print(f"JSON decode error for pattern {i+1}, match {j+1}: {e}")
                     # Try the original match without fixing
                     try:
                         parsed = json.loads(clean_match)
                         if self._validate_analysis_format(parsed):
-                            print(f"🔍 DEBUG: Original match worked for pattern {i+1}, match {j+1}")
+                            debug_print(f"Original match worked for pattern {i+1}, match {j+1}")
                             return parsed
                     except json.JSONDecodeError:
                         continue
         
         # Strategy 3: Try to fix truncated JSON
         if response_content.strip().startswith('{'):
-            print("🔍 DEBUG: Attempting to fix potentially truncated JSON")
+            debug_print("Attempting to fix potentially truncated JSON")
             
             # First try: see if it's just missing closing braces
             content = response_content.strip()
@@ -339,17 +340,17 @@ CRITICAL INSTRUCTIONS:
                 close_braces = content.count('}')
                 missing_braces = open_braces - close_braces
                 
-                print(f"🔍 DEBUG: Open braces: {open_braces}, Close braces: {close_braces}, Missing: {missing_braces}")
+                debug_print(f"Open braces: {open_braces}, Close braces: {close_braces}, Missing: {missing_braces}")
                 
                 if missing_braces > 0:
                     try:
                         fixed_json = content + '}' * missing_braces
                         parsed = json.loads(fixed_json)
                         if self._validate_analysis_format(parsed):
-                            print(f"🔍 DEBUG: Fixed truncated JSON by adding {missing_braces} closing braces")
+                            debug_print(f"Fixed truncated JSON by adding {missing_braces} closing braces")
                             return parsed
                     except json.JSONDecodeError as e:
-                        print(f"🔍 DEBUG: Failed to fix with calculated braces: {e}")
+                        debug_print(f"Failed to fix with calculated braces: {e}")
                 
                 # Try adding 1-5 braces as fallback
                 for i in range(1, 6):
@@ -357,12 +358,12 @@ CRITICAL INSTRUCTIONS:
                         fixed_json = content + '}' * i
                         parsed = json.loads(fixed_json)
                         if self._validate_analysis_format(parsed):
-                            print(f"🔍 DEBUG: Fixed truncated JSON with {i} closing braces")
+                            debug_print(f"Fixed truncated JSON with {i} closing braces")
                             return parsed
                     except json.JSONDecodeError:
                         continue
         
-        print("🔍 DEBUG: All JSON parsing strategies failed")
+        debug_print("All JSON parsing strategies failed")
         return None
     
     def _fix_json_escaping(self, json_str: str) -> str:
@@ -473,7 +474,7 @@ CRITICAL INSTRUCTIONS:
             "alternatives": []
         }
         
-        print(f"🔍 DEBUG: Intelligent fallback created: {fallback}")
+        debug_print(f"Intelligent fallback created: {fallback}")
         return fallback
     
     async def _create_plan_from_execution_steps(self, user_input: str, task_plan: Dict[str, Any]) -> 'TaskPlan':
@@ -489,7 +490,7 @@ CRITICAL INSTRUCTIONS:
         steps = []
         execution_steps = task_plan.get("execution_steps", [])
         
-        print(f"🔍 DEBUG: Creating plan from {len(execution_steps)} execution steps")
+        debug_print(f"Creating plan from {len(execution_steps)} execution steps")
         
         for i, exec_step in enumerate(execution_steps):
             step_id = f"step_{i+1}"
@@ -531,9 +532,9 @@ CRITICAL INSTRUCTIONS:
             )
             
             steps.append(task_step)
-            print(f"🔍 DEBUG: Created step: {description} using tool '{tool}' with params {validated_parameters}")
+            debug_print(f"Created step: {description} using tool '{tool}' with params {validated_parameters}")
             if raw_parameters != validated_parameters:
-                print(f"🔧 DEBUG: Fixed parameters: {raw_parameters} → {validated_parameters}")
+                debug_print(f"Fixed parameters: {raw_parameters} → {validated_parameters}, DEBUG")
         
         # Determine priority
         priority_map = {1: TaskPriority.LOW, 2: TaskPriority.LOW, 3: TaskPriority.MEDIUM, 
@@ -585,7 +586,7 @@ CRITICAL INSTRUCTIONS:
                 estimated_duration=15
             )
             steps.append(summary_step)
-            print(f"🔍 DEBUG: Added summary step for analysis task")
+            debug_print("Added summary step for analysis task")
         
         # Update the plan with potentially additional steps
         plan.steps = steps
@@ -594,7 +595,7 @@ CRITICAL INSTRUCTIONS:
         # Register with task planner
         self.task_planner.active_plans[plan_id] = plan
         
-        print(f"🔍 DEBUG: Created plan '{plan_id}' with {len(steps)} steps")
+        debug_print(f"Created plan '{plan_id}' with {len(steps)} steps")
         return plan
     
     def _generate_tool_parameters(self, tool: str, user_input: str) -> Dict[str, Any]:
@@ -725,9 +726,9 @@ CRITICAL INSTRUCTIONS:
                 fixed_params["search_type"] = "text"  # Default fallback
             
             # Smart conversion: if searching for filenames with text search, convert to filename search
-            query = fixed_params.get("query", "")
+            query = fixed_params.get("query","")
             if fixed_params["search_type"] == "text" and any(pattern in query for pattern in [".py", ".js", ".ts", "|", "main", "app", "__init__"]):
-                print(f"🔧 DEBUG: Converting text search '{query}' to filename search")
+                debug_print(f"Converting text search '{query}' to filename search, DEBUG")
                 fixed_params["search_type"] = "filename"
             
             # Handle file_pattern (only if not already set by search_type handling)
@@ -956,7 +957,7 @@ Set needs_clarification to true when:
         ]
         
         # Debug: Print the directive message to see what's being sent
-        print("🔍 DEBUG: Directive message being sent to model:")
+        debug_print("Directive message being sent to model:")
         print("=" * 60)
         print(directive_message)
         print("=" * 60)
@@ -1080,7 +1081,7 @@ Set needs_clarification to true when:
                 if next_step.tool in self.tools:
                     # Resolve dynamic parameters from previous step results
                     resolved_params = await self._resolve_step_parameters(next_step.parameters, plan)
-                    print(f"🔍 DEBUG: Executing tool '{next_step.tool}' with resolved parameters: {resolved_params}")
+                    debug_print(f"Executing tool '{next_step.tool}' with resolved parameters: {resolved_params}")
                     tool_result = await self.tools[next_step.tool].execute(**resolved_params)
                     
                     if tool_result.success:
@@ -1101,9 +1102,9 @@ Set needs_clarification to true when:
                         )
                         results.append(f"❌ Failed: {tool_result.error}")
                         # Don't break immediately - show the error but continue if possible
-                        print(f"🔍 DEBUG: Tool execution failed - Tool: {next_step.tool}, Params: {next_step.parameters}, Error: {tool_result.error}")
+                        debug_print(f"Tool execution failed - Tool: {next_step.tool}, Params: {next_step.parameters}, Error: {tool_result.error}")
                 else:
-                    print(f"🔍 DEBUG: Tool '{next_step.tool}' not found in available tools: {list(self.tools.keys())}")
+                    debug_print(f"Tool '{next_step.tool}' not found in available tools: {list(self.tools.keys())}")
                     
                     # Check if it's the summary tool and needs LLM provider
                     if next_step.tool == "summary":
@@ -1121,7 +1122,7 @@ Set needs_clarification to true when:
                             "task_description": plan.description
                         }
                         
-                        print(f"🔍 DEBUG: Generating summary with data from {len(summary_data)} sources")
+                        debug_print(f"Generating summary with data from {len(summary_data)} sources")
                         summary_result = await summary_tool.execute(**summary_params)
                         
                         if summary_result.success:
@@ -1176,7 +1177,7 @@ Set needs_clarification to true when:
                             "task_description": plan.description  # Use the actual plan description
                         }
                         
-                        print(f"🔍 DEBUG: Generating summary with data from {len(summary_data)} sources")
+                        debug_print(f"Generating summary with data from {len(summary_data)} sources")
                         summary_result = await self.tools[next_step.tool].execute(**summary_params)
                         
                         if summary_result.success:
@@ -1212,7 +1213,7 @@ Set needs_clarification to true when:
     async def _simple_response(self, user_input: str, task_complexity: TaskComplexity) -> str:
         """Generate simple LLM response by treating it as analysis too - no tools path"""
         
-        print("🔍 DEBUG: In _simple_response - using analysis format (no separate simple path)")
+        debug_print("In _simple_response - using analysis format (no separate simple path)")
         
         # Even for simple responses, use the same analysis format but handle the response
         # This ensures consistency and avoids confusing the model with different formats
@@ -1226,7 +1227,7 @@ Set needs_clarification to true when:
         # Create directive user message using the same analysis format
         directive_message = create_directive_user_message(user_input, empty_tool_schemas)
         
-        print("🔍 DEBUG: Simple response using analysis directive:")
+        debug_print("Simple response using analysis directive:")
         print("=" * 60)
         print(directive_message)
         print("=" * 60)
@@ -1252,17 +1253,17 @@ Set needs_clarification to true when:
         
         response = await self.provider.chat_completion(messages, model_config)
         
-        print(f"🔍 DEBUG: Simple response analysis: {response.content}")
+        debug_print(f"Simple response analysis: {response.content}")
         
         # For simple responses, we expect requires_tools=false, so we can just return a message
         try:
             parsed = json.loads(response.content)
             if parsed.get("requires_tools", False):
-                print("🔍 DEBUG: Simple response indicated tools needed - this shouldn't happen")
+                debug_print("Simple response indicated tools needed - this shouldn't happen")
             # Return a simple message based on the analysis
             return f"Based on my analysis: This appears to be a {parsed.get('complexity', 'general')} task. {parsed.get('action_sequence', ['provide information'])[0] if parsed.get('action_sequence') else 'I can provide information about this.'}"
         except json.JSONDecodeError:
-            print("🔍 DEBUG: Simple response JSON parsing failed")
+            debug_print("Simple response JSON parsing failed")
             return "I can help with that request. Please let me know if you need more specific assistance."
     
     def _select_model(self, task_type: str) -> str:
@@ -1451,11 +1452,11 @@ Set needs_clarification to true when:
                     else:
                         # Fallback to a reasonable default
                         resolved_params[key] = "src/main.py"
-                        print(f"🔧 DEBUG: No search result found, using fallback: src/main.py")
+                        debug_print("No search result found, using fallback: src/main.py ")
                 
                 elif placeholder.startswith("step_") and placeholder.endswith("_result"):
                     # Get result from specific step
-                    step_id = placeholder.replace("_result", "")
+                    step_id = placeholder.replace("_result","")
                     step_result = self._get_step_result(plan, step_id)
                     if step_result:
                         resolved_params[key] = step_result
@@ -1465,7 +1466,7 @@ Set needs_clarification to true when:
                 else:
                     # Unknown placeholder, keep original
                     resolved_params[key] = value
-                    print(f"🔧 DEBUG: Unknown placeholder '{placeholder}', keeping original value")
+                    debug_print(f"Unknown placeholder '{placeholder}', keeping original value")
             
             elif isinstance(value, str) and value == "GENERATE_CONTENT_AT_RUNTIME":
                 # Generate content using LLM based on the task context
@@ -1473,11 +1474,11 @@ Set needs_clarification to true when:
                     filename = parameters.get("path", "file.txt")
                     generated_content = await self._generate_content_with_llm(plan.description, filename, plan)
                     resolved_params[key] = generated_content
-                    print(f"🔧 DEBUG: Generated content for {filename}: {len(generated_content)} characters")
+                    debug_print(f"Generated content for {filename}: {len(generated_content)} characters ")
                 else:
                     # Fallback to basic content if can't determine file type
                     resolved_params[key] = "# Content generated by AI assistant\n"
-                    print(f"🔧 DEBUG: Used fallback content for parameter '{key}'")
+                    debug_print(f"Used fallback content for parameter '{key}' ")
             
             else:
                 # Not a placeholder, keep as-is
@@ -1585,7 +1586,7 @@ Set needs_clarification to true when:
             return generated_content
             
         except Exception as e:
-            print(f"🔧 DEBUG: Error generating content with LLM: {str(e)}")
+            debug_print(f"Error generating content with LLM: {str(e)} ")
             # Fallback to basic content generation
             return self._get_fallback_content(filename, file_extension)
     

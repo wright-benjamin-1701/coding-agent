@@ -57,6 +57,7 @@ class AgentConfig:
     session_dir: str = "sessions"
     enable_learning: bool = True
     learning_dir: str = "memory"
+    debug_mode: bool = False
 
 
 @dataclass
@@ -170,7 +171,8 @@ class ConfigManager:
                 auto_save_session=agent_data.get('auto_save_session', config.agent.auto_save_session),
                 session_dir=agent_data.get('session_dir', config.agent.session_dir),
                 enable_learning=agent_data.get('enable_learning', config.agent.enable_learning),
-                learning_dir=agent_data.get('learning_dir', config.agent.learning_dir)
+                learning_dir=agent_data.get('learning_dir', config.agent.learning_dir),
+                debug_mode=agent_data.get('debug_mode', config.agent.debug_mode)
             )
         
         # Tools config
@@ -215,6 +217,10 @@ class ConfigManager:
         # Logging level override  
         if 'LOG_LEVEL' in os.environ:
             config.logging.level = os.environ['LOG_LEVEL']
+        
+        # Debug mode override
+        if 'DEBUG_MODE' in os.environ:
+            config.agent.debug_mode = os.environ['DEBUG_MODE'].lower() in ('true', '1', 'yes', 'on')
         
         return config
     
