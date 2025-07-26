@@ -99,7 +99,7 @@ class FileTool(BaseTool):
     async def _write_file(self, path: str, content: str, encoding: str) -> ToolResult:
         """Write content to file"""
         if not content:
-            return ToolResult(success=False, error="Content cannot be empty")
+            return ToolResult(success=False, error="Content cannot be empty. Please provide content for the file.")
         
         file_path = Path(path)
         

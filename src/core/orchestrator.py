@@ -239,7 +239,41 @@ CRITICAL INSTRUCTIONS:
         except json.JSONDecodeError as e:
             print(f"🔍 DEBUG: Direct JSON parsing failed: {e}")
             
-        # Strategy 1.5: Try parsing after removing any trailing text
+            # Strategy 1.1: Try parsing just the JSON part if there's trailing content
+            if "Extra data" in str(e):
+                try:
+                    # Extract character position where valid JSON ends
+                    char_pos = e.pos if hasattr(e, 'pos') else None
+                    if char_pos:
+                        json_part = response_content[:char_pos].strip()
+                        parsed = json.loads(json_part)
+                        if self._validate_analysis_format(parsed):
+                            print(f"🔍 DEBUG: Parsing succeeded by trimming at position {char_pos}")
+                            return parsed
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+            
+        # Strategy 1.5: Find the largest valid JSON object by balanced braces
+        content = response_content.strip()
+        if content.startswith('{'):
+            brace_count = 0
+            for i, char in enumerate(content):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        # Found complete JSON object
+                        try:
+                            json_part = content[:i+1]
+                            parsed = json.loads(json_part)
+                            if self._validate_analysis_format(parsed):
+                                print(f"🔍 DEBUG: Balanced brace parsing succeeded at position {i+1}")
+                                return parsed
+                        except json.JSONDecodeError:
+                            continue
+        
+        # Strategy 1.6: Try parsing after removing any trailing text line by line
         lines = response_content.strip().split('\n')
         for i in range(len(lines), 0, -1):
             try:
@@ -602,7 +636,14 @@ CRITICAL INSTRUCTIONS:
             if any(word in user_lower for word in ["read", "show", "display", "cat"]):
                 return {"action": "read", "path": "determined_at_runtime"}
             elif any(word in user_lower for word in ["write", "create", "edit"]):
-                return {"action": "write", "path": "determined_at_runtime"}
+                # Extract filename and generate content for write operations
+                filename = self._extract_filename_from_request(user_input)
+                content = self._generate_file_content_from_request(user_input, filename)
+                return {
+                    "action": "write", 
+                    "path": filename or "determined_at_runtime",
+                    "content": content
+                }
             else:
                 return {"action": "list", "path": "."}
         
@@ -682,6 +723,12 @@ CRITICAL INSTRUCTIONS:
                 fixed_params["search_type"] = "text"
             else:
                 fixed_params["search_type"] = "text"  # Default fallback
+            
+            # Smart conversion: if searching for filenames with text search, convert to filename search
+            query = fixed_params.get("query", "")
+            if fixed_params["search_type"] == "text" and any(pattern in query for pattern in [".py", ".js", ".ts", "|", "main", "app", "__init__"]):
+                print(f"🔧 DEBUG: Converting text search '{query}' to filename search")
+                fixed_params["search_type"] = "filename"
             
             # Handle file_pattern (only if not already set by search_type handling)
             if "file_pattern" not in fixed_params:
@@ -1032,7 +1079,7 @@ Set needs_clarification to true when:
                 # Execute the step
                 if next_step.tool in self.tools:
                     # Resolve dynamic parameters from previous step results
-                    resolved_params = self._resolve_step_parameters(next_step.parameters, plan)
+                    resolved_params = await self._resolve_step_parameters(next_step.parameters, plan)
                     print(f"🔍 DEBUG: Executing tool '{next_step.tool}' with resolved parameters: {resolved_params}")
                     tool_result = await self.tools[next_step.tool].execute(**resolved_params)
                     
@@ -1348,7 +1395,45 @@ Set needs_clarification to true when:
         
         return "\n".join(context_parts)
     
-    def _resolve_step_parameters(self, parameters: Dict[str, Any], plan: TaskPlan) -> Dict[str, Any]:
+    def _extract_filename_from_request(self, user_input: str) -> Optional[str]:
+        """Extract filename from user request"""
+        import re
+        
+        # Look for explicit filename patterns
+        filename_patterns = [
+            r'write\s+(?:a\s+)?(?:file\s+)?(?:called\s+)?([a-zA-Z0-9_.-]+\.py)',
+            r'create\s+(?:a\s+)?(?:file\s+)?(?:called\s+)?([a-zA-Z0-9_.-]+\.py)',
+            r'(?:file\s+)?([a-zA-Z0-9_.-]+\.py)',
+            r'write\s+(?:a\s+)?(?:file\s+)?(?:called\s+)?([a-zA-Z0-9_.-]+)',
+            r'create\s+(?:a\s+)?(?:file\s+)?(?:called\s+)?([a-zA-Z0-9_.-]+)'
+        ]
+        
+        for pattern in filename_patterns:
+            match = re.search(pattern, user_input, re.IGNORECASE)
+            if match:
+                filename = match.group(1)
+                # Add .py extension if missing for Python-related requests
+                if 'python' in user_input.lower() or 'print' in user_input.lower():
+                    if not filename.endswith('.py'):
+                        filename += '.py'
+                return filename
+        
+        # Default filename based on content
+        if 'hello' in user_input.lower():
+            return 'hello.py'
+        elif 'test' in user_input.lower():
+            return 'test.py'
+        else:
+            return 'script.py'
+    
+    def _generate_file_content_from_request(self, user_input: str, filename: Optional[str]) -> str:
+        """Generate file content based on user request using LLM"""
+        
+        # For write requests that don't specify content, indicate it should be generated at runtime
+        # The actual content generation will be handled by the LLM during execution
+        return "GENERATE_CONTENT_AT_RUNTIME"
+    
+    async def _resolve_step_parameters(self, parameters: Dict[str, Any], plan: TaskPlan) -> Dict[str, Any]:
         """Resolve dynamic parameters using results from previous steps"""
         resolved_params = {}
         
@@ -1382,11 +1467,161 @@ Set needs_clarification to true when:
                     resolved_params[key] = value
                     print(f"🔧 DEBUG: Unknown placeholder '{placeholder}', keeping original value")
             
+            elif isinstance(value, str) and value == "GENERATE_CONTENT_AT_RUNTIME":
+                # Generate content using LLM based on the task context
+                if key == "content" and "path" in parameters:
+                    filename = parameters.get("path", "file.txt")
+                    generated_content = await self._generate_content_with_llm(plan.description, filename, plan)
+                    resolved_params[key] = generated_content
+                    print(f"🔧 DEBUG: Generated content for {filename}: {len(generated_content)} characters")
+                else:
+                    # Fallback to basic content if can't determine file type
+                    resolved_params[key] = "# Content generated by AI assistant\n"
+                    print(f"🔧 DEBUG: Used fallback content for parameter '{key}'")
+            
             else:
                 # Not a placeholder, keep as-is
                 resolved_params[key] = value
         
         return resolved_params
+    
+    async def _generate_content_with_llm(self, task_description: str, filename: str, plan: TaskPlan) -> str:
+        """Generate file content using LLM based on the task description and filename"""
+        try:
+            # Build context for content generation
+            file_extension = filename.split('.')[-1].lower() if '.' in filename else ''
+            
+            # Build comprehensive prompt for content generation
+            prompt_parts = [
+                f"Generate appropriate file content for: {filename}",
+                f"Task context: {task_description}",
+                f"File extension: {file_extension}" if file_extension else "No file extension detected",
+                "",
+                "Requirements:",
+                "- Generate complete, functional content appropriate for the file type",
+                "- Make the content relevant to the task description",
+                "- Follow best practices for the programming language/file type",
+                "- Include appropriate comments if it's code",
+                "- Make it practical and ready to use",
+                "",
+                "Return ONLY the file content, no explanations or markdown formatting."
+            ]
+            
+            # Add language-specific guidance
+            if file_extension in ['py', 'python']:
+                prompt_parts.extend([
+                    "",
+                    "For Python files:",
+                    "- Include proper imports if needed",
+                    "- Follow PEP 8 style guidelines", 
+                    "- Add docstrings for functions/classes",
+                    "- Include a main block if it's a script"
+                ])
+            elif file_extension in ['js', 'javascript']:
+                prompt_parts.extend([
+                    "",
+                    "For JavaScript files:",
+                    "- Use modern ES6+ syntax",
+                    "- Include proper error handling",
+                    "- Add JSDoc comments for functions"
+                ])
+            elif file_extension in ['html', 'htm']:
+                prompt_parts.extend([
+                    "",
+                    "For HTML files:",
+                    "- Include proper DOCTYPE and structure",
+                    "- Use semantic HTML elements",
+                    "- Include meta tags in head section"
+                ])
+            elif file_extension in ['css']:
+                prompt_parts.extend([
+                    "",
+                    "For CSS files:",
+                    "- Use modern CSS practices",
+                    "- Include comments for sections",
+                    "- Consider responsive design"
+                ])
+            elif file_extension in ['md', 'markdown']:
+                prompt_parts.extend([
+                    "",
+                    "For Markdown files:",
+                    "- Use proper heading hierarchy",
+                    "- Include relevant sections",
+                    "- Use appropriate markdown syntax"
+                ])
+            
+            generation_prompt = "\n".join(prompt_parts)
+            
+            # Use LLM to generate content
+            messages = [
+                ChatMessage(
+                    role="system",
+                    content="You are a helpful coding assistant. Generate appropriate file content based on the user's request. Return only the file content without any explanations, markdown code blocks, or additional text."
+                ),
+                ChatMessage(role="user", content=generation_prompt)
+            ]
+            
+            # Use a model good for code generation
+            model_config = ModelConfig(
+                model_name=self._select_best_code_model(),
+                temperature=0.2,  # Lower temperature for more consistent code
+                max_tokens=2000
+            )
+            
+            response = await self.provider.chat_completion(messages, model_config)
+            generated_content = response.content.strip()
+            
+            # Clean up any markdown formatting that might have slipped through
+            if generated_content.startswith('```'):
+                # Remove markdown code blocks
+                lines = generated_content.split('\n')
+                if len(lines) > 2 and lines[0].startswith('```') and lines[-1].strip() == '```':
+                    generated_content = '\n'.join(lines[1:-1])
+            
+            # Ensure content is not empty
+            if not generated_content or generated_content.isspace():
+                return self._get_fallback_content(filename, file_extension)
+            
+            return generated_content
+            
+        except Exception as e:
+            print(f"🔧 DEBUG: Error generating content with LLM: {str(e)}")
+            # Fallback to basic content generation
+            return self._get_fallback_content(filename, file_extension)
+    
+    def _select_best_code_model(self) -> str:
+        """Select the best available model for code generation"""
+        available_models = self.provider.list_models()
+        if not available_models:
+            return "default"
+        
+        # Prefer models good for code generation
+        preferred_models = [
+            "deepseek-coder", "codeqwen", "codellama", "starcoder", "deepseek-chat", "qwen", "claude", "gpt"
+        ]
+        
+        for preferred in preferred_models:
+            for model in available_models:
+                if preferred in model.lower():
+                    return model
+        
+        # Fallback to first available
+        return available_models[0]
+    
+    def _get_fallback_content(self, filename: str, file_extension: str) -> str:
+        """Generate basic fallback content when LLM generation fails"""
+        if file_extension in ['py', 'python']:
+            return f'#!/usr/bin/env python3\n"""\n{filename}\n"""\n\ndef main():\n    print("Hello from {filename}")\n\nif __name__ == "__main__":\n    main()\n'
+        elif file_extension in ['js', 'javascript']:
+            return f'// {filename}\nconsole.log("Hello from {filename}");\n'
+        elif file_extension in ['html', 'htm']:
+            return f'<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <title>{filename}</title>\n</head>\n<body>\n    <h1>Hello from {filename}</h1>\n</body>\n</html>\n'
+        elif file_extension in ['css']:
+            return f'/* {filename} */\nbody {{\n    font-family: Arial, sans-serif;\n    margin: 0;\n    padding: 20px;\n}}\n'
+        elif file_extension in ['md', 'markdown']:
+            return f'# {filename}\n\nThis is a markdown file.\n\n## Features\n\n- Feature 1\n- Feature 2\n- Feature 3\n'
+        else:
+            return f'# {filename}\n# Generated content\n'
     
     def _get_latest_search_result(self, plan: TaskPlan) -> Optional[str]:
         """Get the most recent search result from completed steps"""

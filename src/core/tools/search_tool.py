@@ -392,18 +392,25 @@ class SearchTool(BaseTool):
         
         # Convert glob pattern to pathlib pattern
         if pattern == "*":
-            # Search all text files
+            # Search all text files including documentation
             extensions = [".py", ".js", ".ts", ".java", ".c", ".cpp", ".h", ".hpp", 
-                         ".go", ".rs", ".rb", ".php", ".css", ".html", ".sql", ".sh"]
+                         ".go", ".rs", ".rb", ".php", ".css", ".html", ".sql", ".sh",
+                         ".md", ".txt", ".rst", ".yaml", ".yml", ".json", ".toml", ".ini"]
             files = []
             for ext in extensions:
                 files.extend(current_dir.rglob(f"*{ext}"))
+            
+            # For filename searches, also include directories
+            for item in current_dir.rglob("*"):
+                if item.is_dir() and item not in files:
+                    files.append(item)
         else:
             files = list(current_dir.rglob(pattern))
         
         # Filter out common ignore patterns
         ignore_dirs = {".git", "__pycache__", "node_modules", ".vscode", ".idea", 
-                      ".pytest_cache", ".mypy_cache", "venv", "env"}
+                      ".pytest_cache", ".mypy_cache", "venv", "env", ".env", 
+                      "site-packages", ".tox", ".coverage", "dist", "build"}
         
         filtered_files = []
         for file_path in files:
