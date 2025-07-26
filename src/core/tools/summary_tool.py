@@ -3,6 +3,7 @@ Summary tool for generating natural language summaries from collected data
 """
 from typing import Dict, List, Optional, Any
 from .base import BaseTool, ToolParameter, ToolResult
+from ..debug import debug_print
 
 
 class SummaryTool(BaseTool):
@@ -128,8 +129,12 @@ class SummaryTool(BaseTool):
                 prompt_parts.append(f"- {context}")
         
         # Check if this is a file analysis task (define before collected_data section)
-        file_analysis_keywords = ["functions", "methods", "classes", "summarize", "analyze", "list", "content"]
+        file_analysis_keywords = ["functions", "methods", "classes", "summarize", "analyze", "list", "content", "refactor", "improve", "restructure"]
         is_file_analysis = any(keyword in task_description.lower() for keyword in file_analysis_keywords)
+        
+        debug_print(f"Task description: {task_description}")
+        debug_print(f"Is file analysis: {is_file_analysis}")
+        debug_print(f"Collected data keys: {list(collected_data.keys()) if collected_data else []}")
         
         # Collected data
         if collected_data:
@@ -139,12 +144,16 @@ class SummaryTool(BaseTool):
                 prompt_parts.append(f"\n**From {source}:**")
                 
                 if isinstance(data, dict):
+                    debug_print(f"Processing data from {source}: {list(data.keys())}")
+                    
                     # Special handling for file tool results
                     if source.startswith("file_") and is_file_analysis:
+                        debug_print(f"File tool result detected for {source}")
                         # For file analysis, include the full file content
                         if "content" in data:
                             file_content = data["content"]
                             file_path = data.get("path", "unknown file")
+                            debug_print(f"Found file content ({len(str(file_content))} chars) from {file_path}")
                             prompt_parts.append(f"**File Content from {file_path}:**")
                             prompt_parts.append("```")
                             prompt_parts.append(str(file_content))
@@ -154,11 +163,16 @@ class SummaryTool(BaseTool):
                             # Alternative location for file content
                             file_content = data["data"]
                             file_path = data.get("path", "unknown file")
+                            debug_print(f"Found file content in data field ({len(str(file_content))} chars) from {file_path}")
                             prompt_parts.append(f"**File Content from {file_path}:**")
                             prompt_parts.append("```")
                             prompt_parts.append(str(file_content))
                             prompt_parts.append("```")
                             continue
+                        else:
+                            debug_print(f"No file content found in file tool result: {list(data.keys())}")
+                    elif is_file_analysis:
+                        debug_print(f"File analysis task but {source} doesn't start with 'file_'")
                     
                     if "results" in data:
                         results = data["results"]
