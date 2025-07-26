@@ -2,6 +2,7 @@
 Agent orchestrator for coordinating LLM providers and tools
 """
 import json
+import re
 import time
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
@@ -65,6 +66,8 @@ class AgentOrchestrator:
     async def process_request(self, user_input: str) -> str:
         """Process user request and coordinate response"""
         
+        print(f"🔍 DEBUG: Processing request: {user_input}")
+        
         # Add user message to conversation history
         user_message = ChatMessage(role="user", content=user_input)
         self.context.conversation_history.append(user_message)
@@ -75,8 +78,8 @@ class AgentOrchestrator:
                 conversation_history=[msg.__dict__ for msg in self.context.conversation_history]
             )
         
-        # Analyze request and determine if tools are needed
-        task_plan = await self._analyze_request(user_input)
+        # Analyze request and determine if tools are needed using directive format
+        task_plan = await self._analyze_request_with_directive(user_input)
         
         # Get learning-based adaptations
         adaptations = self.learning_system.adapt_behavior({
@@ -94,20 +97,30 @@ class AgentOrchestrator:
         
         # Check if clarification is needed
         if task_plan.get("needs_clarification", False):
+            print("🔍 DEBUG: Taking clarification path")
             result = await self._ask_clarification(user_input, task_plan, task_complexity)
         elif task_plan.get("requires_tools", False):
+            print("🔍 DEBUG: Taking tools path")
             # Create execution plan for complex tasks
             if task_plan.get("complexity") in ["medium", "high"]:
-                plan = await self.task_planner.create_plan(user_input, {
-                    "project_context": self.context.project_context,
-                    "conversation_history": self.context.conversation_history
-                })
+                print("🔍 DEBUG: Using planned task execution")
+                
+                # Use execution_steps if available, otherwise create plan normally
+                if task_plan.get("execution_steps"):
+                    plan = await self._create_plan_from_execution_steps(user_input, task_plan)
+                else:
+                    plan = await self.task_planner.create_plan(user_input, {
+                        "project_context": self.context.project_context,
+                        "conversation_history": self.context.conversation_history
+                    })
                 self.current_plan_id = plan.id
                 result = await self._execute_planned_task(plan, task_complexity)
             else:
+                print("🔍 DEBUG: Using direct tool execution")
                 # Execute simple tool operations directly
                 result = await self._execute_with_tools(task_plan, task_complexity)
         else:
+            print("🔍 DEBUG: Taking simple response path (no tools)")
             # Simple LLM response with intelligent model routing
             result = await self._simple_response(user_input, task_complexity)
         
@@ -137,6 +150,516 @@ class AgentOrchestrator:
             )
         
         return result
+    
+    async def _analyze_request_with_directive(self, user_input: str) -> Dict[str, Any]:
+        """Analyze user request using directive format"""
+        
+        print("🔍 DEBUG: Analyzing request with directive format")
+        
+        # Import prompt utilities
+        from .prompt_utils import create_directive_user_message
+        
+        # Build tool schemas for directive
+        tool_schemas = []
+        for tool_name, tool in self.tools.items():
+            tool_schemas.append({
+                "name": tool_name,
+                "description": tool.to_llm_function_schema().get('description', 'No description')
+            })
+        
+        # Create directive user message
+        directive_message = create_directive_user_message(user_input, tool_schemas)
+        
+        print("🔍 DEBUG: Analysis directive message:")
+        print("=" * 60)
+        print(directive_message)
+        print("=" * 60)
+        
+        # Include project context in analysis
+        project_context = self.get_project_summary()
+        
+        messages = [
+            ChatMessage(
+                role="system", 
+                content=f"""You are a coding agent analyzer. Analyze the user request and provide a task plan.
+
+{project_context}
+
+CRITICAL INSTRUCTIONS:
+- Respond ONLY with valid JSON
+- NO thinking tags, explanations, or extra text
+- Start immediately with {{ and end with }}
+- Keep arrays under 3 items each
+- Maximum response: 500 characters
+- Be CONCISE"""
+            ),
+            ChatMessage(role="user", content=directive_message)
+        ]
+        
+        model_config = ModelConfig(
+            model_name=self._select_model("analysis"),
+            temperature=0.1,
+            max_tokens=800  # Reduced to prevent long responses with thinking tags
+        )
+        
+        response = await self.provider.chat_completion(messages, model_config)
+        
+        print(f"🔍 DEBUG: Raw analysis response: {response.content}")
+        print(f"🔍 DEBUG: Response length: {len(response.content)} characters")
+        
+        # Try to parse JSON with multiple strategies
+        parsed_json = self._parse_analysis_json(response.content)
+        
+        if parsed_json:
+            print(f"🔍 DEBUG: Successfully parsed analysis: {parsed_json}")
+            return parsed_json
+        else:
+            print("🔍 DEBUG: All JSON parsing strategies failed, using intelligent fallback")
+            # Create intelligent fallback based on content analysis
+            return self._create_intelligent_fallback(user_input, response.content)
+    
+    def _parse_analysis_json(self, response_content: str) -> Optional[Dict[str, Any]]:
+        """Try multiple strategies to parse JSON from model response"""
+        
+        # Strategy 1: Direct parsing
+        try:
+            parsed = json.loads(response_content.strip())
+            if self._validate_analysis_format(parsed):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+        
+        # Strategy 2: Extract JSON from mixed content
+        json_patterns = [
+            # Look for JSON object with analysis fields
+            r'(\{[^{}]*"requires_tools"[^{}]*\})',
+            # More complex nested JSON
+            r'(\{(?:[^{}]|\{[^{}]*\})*"requires_tools"(?:[^{}]|\{[^{}]*\})*\})',
+            # JSON code blocks
+            r'```json\s*(\{.*?\})\s*```',
+            r'```\s*(\{.*?\})\s*```',
+            # Last resort: any JSON object
+            r'(\{.*\})'
+        ]
+        
+        for pattern in json_patterns:
+            matches = re.findall(pattern, response_content, re.DOTALL)
+            for match in matches:
+                try:
+                    parsed = json.loads(match.strip())
+                    if self._validate_analysis_format(parsed):
+                        print(f"🔍 DEBUG: Extracted JSON using pattern: {pattern[:30]}...")
+                        return parsed
+                except json.JSONDecodeError:
+                    continue
+        
+        # Strategy 3: Try to fix truncated JSON
+        if response_content.strip().startswith('{') and not response_content.strip().endswith('}'):
+            print("🔍 DEBUG: Attempting to fix truncated JSON")
+            # Try adding closing brace
+            try:
+                fixed_json = response_content.strip() + '}'
+                parsed = json.loads(fixed_json)
+                if self._validate_analysis_format(parsed):
+                    return parsed
+            except json.JSONDecodeError:
+                # Try adding more closing braces for nested structures
+                for i in range(2, 5):
+                    try:
+                        fixed_json = response_content.strip() + '}' * i
+                        parsed = json.loads(fixed_json)
+                        if self._validate_analysis_format(parsed):
+                            print(f"🔍 DEBUG: Fixed truncated JSON with {i} closing braces")
+                            return parsed
+                    except json.JSONDecodeError:
+                        continue
+        
+        return None
+    
+    def _validate_analysis_format(self, data: Dict[str, Any]) -> bool:
+        """Validate if JSON has the expected analysis format"""
+        if not isinstance(data, dict):
+            return False
+        
+        # Must have at least these required fields
+        required_fields = ["requires_tools", "tools_needed", "complexity"]
+        return all(field in data for field in required_fields)
+    
+    def _create_intelligent_fallback(self, user_input: str, response_content: str) -> Dict[str, Any]:
+        """Create intelligent fallback based on content analysis"""
+        
+        user_lower = user_input.lower()
+        response_lower = response_content.lower()
+        
+        # Analyze user input to determine likely tool needs
+        likely_tools = []
+        
+        # File-related keywords
+        if any(word in user_lower for word in ['file', 'read', 'write', 'create', 'edit', 'show', 'cat']):
+            likely_tools.append("file")
+        
+        # Search-related keywords  
+        if any(word in user_lower for word in ['find', 'search', 'look', 'grep', 'locate']):
+            likely_tools.append("search")
+            
+        # Git-related keywords
+        if any(word in user_lower for word in ['git', 'commit', 'branch', 'status', 'diff']):
+            likely_tools.append("git")
+            
+        # Refactor-related keywords
+        if any(word in user_lower for word in ['refactor', 'rename', 'extract', 'move']):
+            likely_tools.append("refactor")
+        
+        # Debug-related keywords
+        if any(word in user_lower for word in ['debug', 'error', 'bug', 'fix', 'problem']):
+            likely_tools.append("debug")
+        
+        # Determine complexity
+        complexity = "low"
+        if any(word in user_lower for word in ['all', 'entire', 'whole', 'complete', 'complex']):
+            complexity = "medium"
+        if any(word in user_lower for word in ['refactor', 'migrate', 'restructure', 'analyze']):
+            complexity = "high"
+        
+        # Check if response mentions tools
+        response_mentioned_tools = []
+        for tool in ['search', 'file', 'git', 'refactor', 'debug']:
+            if tool in response_lower:
+                response_mentioned_tools.append(tool)
+        
+        # Combine likely tools with response-mentioned tools
+        final_tools = list(set(likely_tools + response_mentioned_tools))
+        
+        # Filter to only available tools and limit to most relevant
+        available_tools = list(self.tools.keys())
+        final_tools = [tool for tool in final_tools if tool in available_tools]
+        
+        # Limit to max 2 tools to avoid overwhelming fallback plans
+        final_tools = final_tools[:2]
+        
+        # Generate execution steps for the fallback
+        execution_steps = []
+        if final_tools:
+            for i, tool in enumerate(final_tools):
+                raw_params = self._generate_tool_parameters(tool, user_input)
+                validated_params = self._validate_and_fix_tool_parameters(tool, raw_params)
+                execution_steps.append({
+                    "step": f"Use {tool} to {self._get_tool_action_description(tool, user_input)}",
+                    "tool": tool,
+                    "parameters": validated_params,
+                    "dependencies": [f"step_{i}"] if i > 0 else []
+                })
+        
+        fallback = {
+            "requires_tools": len(final_tools) > 0,
+            "needs_clarification": False,
+            "tools_needed": final_tools,
+            "action_sequence": [f"use {tool}" for tool in final_tools] if final_tools else ["provide response"],
+            "execution_steps": execution_steps,
+            "priority": 3 if final_tools else 1,
+            "complexity": complexity,
+            "estimated_steps": len(final_tools) + 1 if final_tools else 1,
+            "clarification_questions": [],
+            "alternatives": []
+        }
+        
+        print(f"🔍 DEBUG: Intelligent fallback created: {fallback}")
+        return fallback
+    
+    async def _create_plan_from_execution_steps(self, user_input: str, task_plan: Dict[str, Any]) -> 'TaskPlan':
+        """Create a TaskPlan from execution_steps in the analysis"""
+        
+        from .planner import TaskPlan, TaskStep, TaskPriority, TaskStatus
+        import time
+        
+        # Generate unique plan ID
+        plan_id = f"plan_analysis_{int(time.time())}"
+        
+        # Convert execution_steps to TaskStep objects
+        steps = []
+        execution_steps = task_plan.get("execution_steps", [])
+        
+        print(f"🔍 DEBUG: Creating plan from {len(execution_steps)} execution steps")
+        
+        for i, exec_step in enumerate(execution_steps):
+            step_id = f"step_{i+1}"
+            
+            # Extract step information
+            description = exec_step.get("step", f"Execute step {i+1}")
+            tool = exec_step.get("tool", "unknown")
+            raw_parameters = exec_step.get("parameters", {})
+            raw_dependencies = exec_step.get("dependencies", [])
+            
+            # Fix dependency mapping - convert step names to step IDs
+            dependencies = []
+            for dep in raw_dependencies:
+                if isinstance(dep, str):
+                    # If dependency is a step name, try to find the corresponding step ID
+                    if dep.startswith("step_"):
+                        dependencies.append(dep)  # Already a step ID
+                    else:
+                        # Convert step names to step IDs based on position
+                        # For now, assume sequential dependencies
+                        if i > 0:
+                            dependencies.append(f"step_{i}")
+                        # Could add more sophisticated mapping later
+                else:
+                    dependencies.append(dep)
+            
+            # Fix and validate parameters for the specific tool
+            validated_parameters = self._validate_and_fix_tool_parameters(tool, raw_parameters)
+            
+            # Create TaskStep
+            task_step = TaskStep(
+                id=step_id,
+                description=description,
+                tool=tool,
+                parameters=validated_parameters,
+                dependencies=dependencies,
+                status=TaskStatus.PENDING,
+                estimated_duration=30  # Default duration
+            )
+            
+            steps.append(task_step)
+            print(f"🔍 DEBUG: Created step: {description} using tool '{tool}' with params {validated_parameters}")
+            if raw_parameters != validated_parameters:
+                print(f"🔧 DEBUG: Fixed parameters: {raw_parameters} → {validated_parameters}")
+        
+        # Determine priority
+        priority_map = {1: TaskPriority.LOW, 2: TaskPriority.LOW, 3: TaskPriority.MEDIUM, 
+                       4: TaskPriority.HIGH, 5: TaskPriority.HIGH}
+        priority = priority_map.get(task_plan.get("priority", 3), TaskPriority.MEDIUM)
+        
+        # Create TaskPlan
+        plan = TaskPlan(
+            id=plan_id,
+            title=f"Analysis-Driven Task: {user_input[:50]}...",
+            description=user_input,
+            steps=steps,
+            priority=priority,
+            status=TaskStatus.PENDING,
+            total_estimated_duration=len(steps) * 30,
+            metadata={
+                "complexity": task_plan.get("complexity", "medium"),
+                "requires_user_input": task_plan.get("needs_clarification", False),
+                "can_be_paused": True,
+                "tools_needed": task_plan.get("tools_needed", []),
+                "source": "analysis_execution_steps"
+            }
+        )
+        
+        # Register with task planner
+        self.task_planner.active_plans[plan_id] = plan
+        
+        print(f"🔍 DEBUG: Created plan '{plan_id}' with {len(steps)} steps")
+        return plan
+    
+    def _generate_tool_parameters(self, tool: str, user_input: str) -> Dict[str, Any]:
+        """Generate appropriate parameters for a tool based on user input"""
+        
+        user_lower = user_input.lower()
+        
+        if tool == "search":
+            # Extract search terms
+            if "find" in user_lower:
+                search_term = user_input.split("find")[-1].strip()
+            elif "search" in user_lower:
+                search_term = user_input.split("search")[-1].strip()
+            else:
+                search_term = user_input
+            
+            return {
+                "query": search_term,
+                "search_type": "text"
+            }
+        
+        elif tool == "file":
+            # Determine file operation
+            if any(word in user_lower for word in ["read", "show", "display", "cat"]):
+                return {"action": "read", "path": "determined_at_runtime"}
+            elif any(word in user_lower for word in ["write", "create", "edit"]):
+                return {"action": "write", "path": "determined_at_runtime"}
+            else:
+                return {"action": "list_directory", "path": "."}
+        
+        elif tool == "git":
+            if "status" in user_lower:
+                return {"action": "status"}
+            elif "commit" in user_lower:
+                return {"action": "commit"}
+            elif "branch" in user_lower:
+                return {"action": "branch"}
+            else:
+                return {"action": "status"}
+        
+        elif tool == "refactor":
+            return {"action": "determined_at_runtime"}
+        
+        elif tool == "debug":
+            return {"action": "analyze_error"}
+        
+        # Default parameters
+        return {"action": "determined_at_runtime"}
+    
+    def _get_tool_action_description(self, tool: str, user_input: str) -> str:
+        """Get a description of what the tool will do"""
+        
+        user_lower = user_input.lower()
+        
+        if tool == "search":
+            return "search for relevant code patterns"
+        elif tool == "file":
+            if any(word in user_lower for word in ["read", "show", "display"]):
+                return "read and examine files"
+            elif any(word in user_lower for word in ["write", "create", "edit"]):
+                return "create or modify files"
+            else:
+                return "work with files"
+        elif tool == "git":
+            return "perform git operations"
+        elif tool == "refactor":
+            return "refactor code"
+        elif tool == "debug":
+            return "analyze and fix issues"
+        else:
+            return f"execute {tool} operations"
+    
+    def _validate_and_fix_tool_parameters(self, tool: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate and fix parameters to match actual tool schemas"""
+        
+        if tool == "search":
+            # Search tool expects: query, search_type, file_pattern, max_results, context_lines
+            fixed_params = {}
+            
+            # Handle query parameter
+            if "query" in parameters:
+                fixed_params["query"] = parameters["query"]
+            elif "pattern" in parameters:
+                fixed_params["query"] = parameters["pattern"]
+            elif "search_term" in parameters:
+                fixed_params["query"] = parameters["search_term"]
+            else:
+                fixed_params["query"] = "main"  # Default fallback
+            
+            # Handle search_type with validation
+            search_type = None
+            if "search_type" in parameters:
+                search_type = parameters["search_type"]
+            elif "type" in parameters:
+                search_type = parameters["type"]
+            
+            # Validate and fix search_type
+            valid_search_types = ["text", "regex", "function", "class", "import"]
+            if search_type in valid_search_types:
+                fixed_params["search_type"] = search_type
+            elif search_type == "filename":
+                # Convert filename search to text search with appropriate file pattern
+                fixed_params["search_type"] = "text"
+                # Use the query as a file pattern if it looks like a filename pattern
+                query = parameters.get("query", "main")
+                if "|" in query or "*" in query or "." in query:
+                    # Complex pattern - use as file_pattern and search for common content
+                    fixed_params["file_pattern"] = f"*{query.replace('|', '*')}*"
+                    fixed_params["query"] = "def|class|import|function"  # Search for code patterns
+                else:
+                    # Simple filename - search in filenames
+                    fixed_params["file_pattern"] = f"*{query}*"
+                    fixed_params["query"] = query
+            elif search_type == "pattern":
+                fixed_params["search_type"] = "regex"
+            elif search_type == "code":
+                fixed_params["search_type"] = "text"
+            else:
+                fixed_params["search_type"] = "text"  # Default fallback
+            
+            # Handle file_pattern (only if not already set by search_type handling)
+            if "file_pattern" not in fixed_params:
+                if "file_pattern" in parameters:
+                    fixed_params["file_pattern"] = parameters["file_pattern"]
+                elif "pattern" in parameters and parameters["pattern"].startswith("*"):
+                    fixed_params["file_pattern"] = parameters["pattern"]
+                else:
+                    fixed_params["file_pattern"] = "*"  # Default
+            
+            # Add default values for optional parameters
+            fixed_params["max_results"] = parameters.get("max_results", 50)
+            fixed_params["context_lines"] = parameters.get("context_lines", 3)
+            
+            return fixed_params
+        
+        elif tool == "git":
+            # Git tool expects: action, files, message, branch_name, remote
+            fixed_params = {}
+            
+            # Handle action parameter
+            if "action" in parameters:
+                fixed_params["action"] = parameters["action"]
+            elif "command" in parameters:
+                fixed_params["action"] = parameters["command"]
+            else:
+                fixed_params["action"] = "status"  # Default fallback
+            
+            # Copy other valid parameters
+            for param in ["files", "message", "branch_name", "remote"]:
+                if param in parameters:
+                    fixed_params[param] = parameters[param]
+            
+            return fixed_params
+        
+        elif tool == "file":
+            # File tool expects: action, path, content, encoding
+            fixed_params = {}
+            
+            # Handle action parameter
+            if "action" in parameters:
+                action = parameters["action"]
+                # Fix specific invalid actions
+                if action == "list_structure":
+                    fixed_params["action"] = "list"
+                else:
+                    fixed_params["action"] = action
+            elif "operation" in parameters:
+                fixed_params["action"] = parameters["operation"]
+            elif "list_structure" in parameters:
+                fixed_params["action"] = "list"
+            else:
+                fixed_params["action"] = "read"  # Default fallback
+            
+            # Handle path parameter
+            if "path" in parameters:
+                fixed_params["path"] = parameters["path"]
+            elif "file" in parameters:
+                fixed_params["path"] = parameters["file"]
+            elif "filename" in parameters:
+                fixed_params["path"] = parameters["filename"]
+            elif fixed_params["action"] == "list":
+                fixed_params["path"] = "."  # Default to current directory for list
+            else:
+                fixed_params["path"] = "determined_at_runtime"
+            
+            # Copy other valid parameters
+            for param in ["content", "encoding"]:
+                if param in parameters:
+                    fixed_params[param] = parameters[param]
+            
+            return fixed_params
+        
+        elif tool in ["refactor", "debug"]:
+            # For tools we don't have detailed schemas for, pass through with basic fixes
+            fixed_params = parameters.copy()
+            
+            # Ensure action parameter exists
+            if "action" not in fixed_params:
+                if "operation" in fixed_params:
+                    fixed_params["action"] = fixed_params.pop("operation")
+                else:
+                    fixed_params["action"] = "determined_at_runtime"
+            
+            return fixed_params
+        
+        else:
+            # Unknown tool - pass through parameters as-is
+            return parameters
     
     async def _analyze_request(self, user_input: str) -> Dict[str, Any]:
         """Analyze user request to determine required actions"""
@@ -218,29 +741,38 @@ Set needs_clarification to true when:
         for tool in available_tools:
             tool_schemas.append(tool.to_llm_function_schema())
         
-        system_prompt = f"""You are a helpful coding agent with access to the following tools:
-
-{json.dumps(tool_schemas, indent=2)}
-
-When you need to use a tool, respond with JSON in this format:
-{{
-    "action": "use_tool",
-    "tool": "tool_name",
-    "parameters": {{"param1": "value1", "param2": "value2"}}
-}}
-
-When you're done or don't need tools, respond with:
-{{
-    "action": "respond",
-    "message": "your response to the user"
-}}
-
-Be helpful and execute the user's request step by step."""
+        # Import prompt utilities
+        from .prompt_utils import create_tool_system_prompt, create_directive_user_message
         
+        # Create simple system prompt without directive
+        system_prompt = """You are a helpful coding agent. Respond only with valid JSON in the specified format."""
+        
+        # Get the most recent user message and replace it with directive format
+        original_user_message = None
+        if self.context.conversation_history:
+            for msg in reversed(self.context.conversation_history):
+                if msg.role == "user":
+                    original_user_message = msg.content
+                    break
+        
+        # Create directive user message
+        if original_user_message:
+            directive_message = create_directive_user_message(original_user_message, tool_schemas)
+        else:
+            directive_message = "Please respond with valid JSON."
+        
+        # Build messages with directive user message
         messages = [
             ChatMessage(role="system", content=system_prompt),
-            *self.context.conversation_history[-10:],  # Include recent context
+            *self.context.conversation_history[-10:-1],  # Include context except last user message
+            ChatMessage(role="user", content=directive_message)  # Replace with directive format
         ]
+        
+        # Debug: Print the directive message to see what's being sent
+        print("🔍 DEBUG: Directive message being sent to model:")
+        print("=" * 60)
+        print(directive_message)
+        print("=" * 60)
         
         max_iterations = 10
         iteration = 0
@@ -359,6 +891,7 @@ Be helpful and execute the user's request step by step."""
             try:
                 # Execute the step
                 if next_step.tool in self.tools:
+                    print(f"🔍 DEBUG: Executing tool '{next_step.tool}' with parameters: {next_step.parameters}")
                     tool_result = await self.tools[next_step.tool].execute(**next_step.parameters)
                     
                     if tool_result.success:
@@ -366,15 +899,22 @@ Be helpful and execute the user's request step by step."""
                             plan.id, next_step.id, TaskStatus.COMPLETED, 
                             result=tool_result.data
                         )
-                        results.append(f"✅ Completed: {tool_result.content}")
+                        # Show more detailed results for debugging
+                        content_preview = (tool_result.content or "No content")[:200]
+                        data_preview = str(tool_result.data)[:200] if tool_result.data else "No data"
+                        results.append(f"✅ Completed: {content_preview}")
+                        if tool_result.data:
+                            results.append(f"📊 Data: {data_preview}")
                     else:
                         self.task_planner.update_step_status(
                             plan.id, next_step.id, TaskStatus.FAILED, 
                             error=tool_result.error or "Unknown error"
                         )
                         results.append(f"❌ Failed: {tool_result.error}")
-                        break  # Stop on failure
+                        # Don't break immediately - show the error but continue if possible
+                        print(f"🔍 DEBUG: Tool execution failed - Tool: {next_step.tool}, Params: {next_step.parameters}, Error: {tool_result.error}")
                 else:
+                    print(f"🔍 DEBUG: Tool '{next_step.tool}' not found in available tools: {list(self.tools.keys())}")
                     # Handle special steps
                     if next_step.tool == "context":
                         # Context gathering step
@@ -416,8 +956,27 @@ Be helpful and execute the user's request step by step."""
         
         return "\n".join(results)
     
-    async def _simple_response(self, _user_input: str, task_complexity: TaskComplexity) -> str:
-        """Generate simple LLM response without tools using intelligent routing"""
+    async def _simple_response(self, user_input: str, task_complexity: TaskComplexity) -> str:
+        """Generate simple LLM response by treating it as analysis too - no tools path"""
+        
+        print("🔍 DEBUG: In _simple_response - using analysis format (no separate simple path)")
+        
+        # Even for simple responses, use the same analysis format but handle the response
+        # This ensures consistency and avoids confusing the model with different formats
+        
+        # Import prompt utilities for directive format
+        from .prompt_utils import create_directive_user_message
+        
+        # Build empty tool schemas since no tools in simple response
+        empty_tool_schemas = []
+        
+        # Create directive user message using the same analysis format
+        directive_message = create_directive_user_message(user_input, empty_tool_schemas)
+        
+        print("🔍 DEBUG: Simple response using analysis directive:")
+        print("=" * 60)
+        print(directive_message)
+        print("=" * 60)
         
         # Include project context in system message if available
         context_info = ""
@@ -427,13 +986,31 @@ Be helpful and execute the user's request step by step."""
         messages = [
             ChatMessage(
                 role="system", 
-                content=f"You are a helpful coding assistant. Provide clear, concise responses.{context_info}"
+                content=f"You are a helpful coding assistant. Analyze the request and provide a task plan.{context_info}"
             ),
-            *self.context.conversation_history[-10:],  # Include recent context
+            ChatMessage(role="user", content=directive_message)
         ]
         
-        # Use intelligent model routing
-        return await self.model_router.execute_with_routing(messages, task_complexity)
+        model_config = ModelConfig(
+            model_name=self._select_model("analysis"),
+            temperature=0.1,
+            max_tokens=500
+        )
+        
+        response = await self.provider.chat_completion(messages, model_config)
+        
+        print(f"🔍 DEBUG: Simple response analysis: {response.content}")
+        
+        # For simple responses, we expect requires_tools=false, so we can just return a message
+        try:
+            parsed = json.loads(response.content)
+            if parsed.get("requires_tools", False):
+                print("🔍 DEBUG: Simple response indicated tools needed - this shouldn't happen")
+            # Return a simple message based on the analysis
+            return f"Based on my analysis: This appears to be a {parsed.get('complexity', 'general')} task. {parsed.get('action_sequence', ['provide information'])[0] if parsed.get('action_sequence') else 'I can provide information about this.'}"
+        except json.JSONDecodeError:
+            print("🔍 DEBUG: Simple response JSON parsing failed")
+            return "I can help with that request. Please let me know if you need more specific assistance."
     
     def _select_model(self, task_type: str) -> str:
         """Select appropriate model based on task type and configuration"""
@@ -442,13 +1019,27 @@ Be helpful and execute the user's request step by step."""
         if not available_models:
             return "default"
         
-        # Use configuration-based model selection
+        # ALWAYS prioritize configuration-based model selection
         selected_model = self.config.get_model_for_task(task_type, available_models)
         
         if selected_model:
             return selected_model
         
-        # Fallback logic for backwards compatibility
+        # If no configured model is available, check if config has any preferred models
+        # and use them even if they're not in the "ideal" category
+        all_configured_models = (
+            self.config.config.models.high_reasoning +
+            self.config.config.models.fast_completion + 
+            self.config.config.models.analysis +
+            self.config.config.models.chat
+        )
+        
+        # Look for any configured model that's available
+        for configured_model in all_configured_models:
+            if configured_model in available_models:
+                return configured_model
+        
+        # Only use fallback logic if NO configured models are available
         if task_type == "execution":
             for model in available_models:
                 if any(term in model.lower() for term in ["coder", "code", "deepseek"]):

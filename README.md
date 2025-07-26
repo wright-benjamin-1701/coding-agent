@@ -1,14 +1,14 @@
-# 🤖 Open Source Coding Agent with Ollama Integration
+# 🤖 Open Source Coding Agent with Enhanced Small Model Support
 
-A powerful, privacy-first AI coding assistant that runs entirely on your local machine. Built with intelligent model routing, learning capabilities, and comprehensive development tools.
+A powerful, privacy-first AI coding assistant that runs entirely on your local machine. Built with intelligent model routing, robust parameter validation, and optimized support for small local models like qwen3:30b.
 
 ## 🌟 Why This Coding Agent?
 
 - **🔒 Privacy-First**: All AI processing happens locally with Ollama - no data leaves your machine
-- **🧠 Adaptive Learning**: Learns your preferences and coding patterns to provide personalized assistance
-- **⚡ Intelligent Model Routing**: Automatically selects the best model for each task and chains them for optimal performance
-- **🛡️ Safety Built-In**: Comprehensive safety validation and error prevention
-- **🎯 Context-Aware**: Deep project understanding with AST parsing and dependency analysis
+- **🧠 Small Model Optimized**: Enhanced interpretation layer works brilliantly with local models (qwen3:30b, phi, gemma)
+- **⚡ Intelligent Model Routing**: Automatically selects the best model for each task with configuration priority
+- **🛡️ Robust Parameter Handling**: Automatically fixes invalid tool parameters from model outputs
+- **🎯 Context-Aware**: Deep project understanding with enhanced JSON parsing and execution planning
 - **🔧 Production-Ready**: Full test suite, type safety, and enterprise-grade architecture
 
 ## 🎯 Complete Feature Set
@@ -28,12 +28,12 @@ A powerful, privacy-first AI coding assistant that runs entirely on your local m
 
 ### 🚀 **Advanced Capabilities**
 
-- **Multi-Model Intelligence**: Chains reasoning and fast completion models automatically
-- **Learning System**: Adapts to your coding style, preferred tools, and response preferences
-- **Performance Tracking**: Monitors success rates and continuously improves
-- **Safety Validation**: Prevents destructive operations with comprehensive checks
-- **Session Management**: Persistent sessions with automatic saving and recovery
-- **Task Planning**: Breaks down complex requests into manageable steps
+- **Enhanced Interpretation Layer**: Converts unpredictable small model outputs into reliable structured actions
+- **Automatic Parameter Validation**: Fixes common parameter mistakes (`pattern→query`, `command→action`, `filename→text`)
+- **Robust JSON Parsing**: Handles truncated responses, thinking tags, and various model output formats
+- **Intelligent Fallback System**: Creates execution plans when JSON parsing completely fails
+- **Analysis-Driven Planning**: Models provide detailed execution_steps that directly convert to TaskStep objects
+- **Small Model Support**: Optimized prompts and parsing specifically for local models (qwen3:30b, phi, gemma)
 
 ## 🏃 Quick Start
 
@@ -51,7 +51,8 @@ curl -fsSL https://ollama.com/install.sh | sh
 ollama serve
 
 # Pull recommended models
-ollama pull qwen2.5-coder:7b    # Balanced performance
+ollama pull qwen3:30b           # Optimized for this system
+ollama pull qwen2.5-coder:7b    # Alternative balanced performance
 ollama pull qwen2.5-coder:32b   # Best quality (if you have 16GB+ RAM)
 
 # Clone and setup
@@ -125,19 +126,26 @@ python src/main.py
 "Suggest performance optimizations for the data processing pipeline"
 ```
 
-## 🏗️ Architecture Highlights
+## 🏗️ Enhanced Architecture for Small Models
 
-### **Modular Design**
-- **Provider Abstraction**: Swap between Ollama, OpenAI, Anthropic seamlessly
-- **Tool System**: Extensible plugin architecture for new capabilities
-- **Learning Layer**: Continuous improvement through user interaction
-- **Safety Layer**: Comprehensive validation and error prevention
+### **Small Model Optimization Layer**
+- **Enhanced JSON Format**: Includes detailed `execution_steps` for direct planner integration
+- **Parameter Validation**: Automatically fixes common mistakes like `pattern→query`, `command→action`
+- **Search Type Validation**: Converts invalid types like `filename→text` with smart file patterns
+- **Intelligent Fallback**: Creates execution plans from keyword analysis when JSON parsing fails
+- **Robust Parsing**: Handles truncated responses, thinking tags, and mixed content formats
+
+### **Request Processing Flow**
+1. **Analysis Phase**: Models receive directive format with tool parameter hints
+2. **Validation Phase**: Automatic parameter correction and search type validation  
+3. **Planning Phase**: Direct conversion of execution_steps to TaskStep objects
+4. **Execution Phase**: Tools receive validated parameters matching their schemas
 
 ### **Intelligent Model Management**
+- **Configuration Priority**: Respects user model preferences over heuristic scoring
 - **Task Complexity Analysis**: Automatically determines optimal approach
-- **Model Chaining**: Uses reasoning models for planning, fast models for execution
-- **Fallback Handling**: Graceful degradation with single-model setups
-- **Performance Tracking**: Learns which models work best for different tasks
+- **Enhanced Prompting**: Optimized directive format for small model understanding
+- **Adaptive Parsing**: Multiple parsing strategies for various model output formats
 
 ### **Enterprise-Grade Features**
 - **Type Safety**: Full type annotations and mypy compatibility
@@ -175,9 +183,10 @@ ruff check src/
 - **SSD Storage**: Faster model loading and file operations
 
 ### **Model Recommendations**
-- **Development**: `qwen2.5-coder:7b` - Perfect balance of speed and capability
-- **Production**: `qwen2.5-coder:32b` - Maximum reasoning and code quality
-- **Quick Tasks**: `qwen2.5-coder:1.5b` - Fast responses for simple operations
+- **Primary Choice**: `qwen3:30b` - Optimized with enhanced parameter validation and parsing
+- **Alternative**: `qwen2.5-coder:7b` - Good performance with parameter fixes
+- **High Quality**: `qwen2.5-coder:32b` - Maximum reasoning (requires 16GB+ RAM)
+- **Quick Tasks**: `phi3:14b` - Fast responses with intelligent fallback support
 - **Analysis**: `deepseek-coder:33b` - Superior for complex code analysis
 
 ## 🔧 Advanced Configuration
@@ -187,12 +196,15 @@ ruff check src/
 # config.yaml
 models:
   high_reasoning:
+    - "qwen3:30b"           # Optimized primary choice
     - "qwen2.5-coder:32b"
     - "deepseek-coder:33b"
   fast_completion:
+    - "qwen3:30b"           # Works excellently for fast tasks too
+    - "phi3:14b"
     - "qwen2.5-coder:7b" 
-    - "qwen2.5-coder:1.5b"
   analysis:
+    - "qwen3:30b"           # Enhanced analysis format support
     - "qwen2.5-coder:14b"
 
 agent:

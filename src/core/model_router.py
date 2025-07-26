@@ -223,9 +223,45 @@ class ModelRouter:
     def select_optimal_model(self, task_complexity: TaskComplexity) -> Tuple[str, bool]:
         """Select optimal model for task, returns (model_name, should_chain)"""
         
+        available_models = self.provider.list_models()
+        
+        if not available_models:
+            return "default", False
+        
+        # FIRST PRIORITY: Use configuration-based model selection
+        task_type_map = {
+            "reasoning": "high_reasoning",
+            "complex_analysis": "high_reasoning", 
+            "code_generation": "analysis",
+            "quick_response": "fast_completion",
+            "general": "chat"
+        }
+        
+        config_task_type = task_type_map.get(task_complexity.task_type, "analysis")
+        
+        # Try to get configured model first
+        configured_model = self.config.get_model_for_task(config_task_type, available_models)
+        if configured_model:
+            # Always use configured model when available
+            should_chain = self._should_chain_models(task_complexity, configured_model)
+            return configured_model, should_chain
+        
+        # SECOND PRIORITY: Try any configured model
+        all_configured_models = (
+            self.config.config.models.high_reasoning +
+            self.config.config.models.fast_completion + 
+            self.config.config.models.analysis +
+            self.config.config.models.chat
+        )
+        
+        for configured_model in all_configured_models:
+            if configured_model in available_models:
+                should_chain = self._should_chain_models(task_complexity, configured_model)
+                return configured_model, should_chain
+        
+        # FALLBACK: Only use heuristic scoring if no configured models available
         if not self.model_capabilities:
-            available_models = self.provider.list_models()
-            return available_models[0] if available_models else "default", False
+            return available_models[0], False
         
         # Score each model for this task
         model_scores = {}
@@ -281,7 +317,6 @@ class ModelRouter:
         # Select best model
         best_model = max(model_scores.items(), key=lambda x: x[1])
         best_model_name = best_model[0]
-        best_score = best_model[1]
         
         # Determine if we should chain models
         should_chain = self._should_chain_models(task_complexity, best_model_name)
@@ -407,22 +442,17 @@ class ModelRouter:
         reasoning_model = self._get_best_reasoning_model()
         
         if reasoning_model:
+            # Import prompt utilities
+            from .prompt_utils import create_reasoning_system_prompt
+            
             # Create analysis prompt
+            reasoning_prompt = create_reasoning_system_prompt(
+                task_complexity.complexity_score, 
+                task_complexity.task_type
+            )
+            
             analysis_messages = messages + [
-                ChatMessage(
-                    role="system", 
-                    content=f"""You are the reasoning phase of a multi-model system. 
-                    Analyze this request and provide:
-                    1. Key insights and approach
-                    2. Specific requirements 
-                    3. Implementation steps if applicable
-                    4. Any code generation needs
-                    
-                    Task complexity: {task_complexity.complexity_score}/10
-                    Task type: {task_complexity.task_type}
-                    
-                    Be concise but thorough. Your analysis will guide the next model."""
-                )
+                ChatMessage(role="system", content=reasoning_prompt)
             ]
             
             try:
@@ -466,6 +496,26 @@ class ModelRouter:
     
     def _get_best_reasoning_model(self) -> Optional[str]:
         """Get the best available reasoning model"""
+        available_models = self.provider.list_models()
+        
+        # FIRST: Try configured high reasoning models
+        configured_model = self.config.get_model_for_task("high_reasoning", available_models)
+        if configured_model:
+            return configured_model
+        
+        # SECOND: Try any configured model
+        all_configured_models = (
+            self.config.config.models.high_reasoning +
+            self.config.config.models.analysis +
+            self.config.config.models.chat +
+            self.config.config.models.fast_completion
+        )
+        
+        for configured_model in all_configured_models:
+            if configured_model in available_models:
+                return configured_model
+        
+        # FALLBACK: Use heuristic selection
         reasoning_models = [
             (name, cap) for name, cap in self.model_capabilities.items()
             if cap.type == ModelType.REASONING or cap.reasoning_score >= 8
@@ -480,6 +530,26 @@ class ModelRouter:
     
     def _get_best_fast_model(self) -> Optional[str]:
         """Get the best available fast completion model"""
+        available_models = self.provider.list_models()
+        
+        # FIRST: Try configured fast completion models
+        configured_model = self.config.get_model_for_task("fast_completion", available_models)
+        if configured_model:
+            return configured_model
+        
+        # SECOND: Try any configured model
+        all_configured_models = (
+            self.config.config.models.fast_completion +
+            self.config.config.models.chat +
+            self.config.config.models.analysis +
+            self.config.config.models.high_reasoning
+        )
+        
+        for configured_model in all_configured_models:
+            if configured_model in available_models:
+                return configured_model
+        
+        # FALLBACK: Use heuristic selection
         fast_models = [
             (name, cap) for name, cap in self.model_capabilities.items()
             if cap.type == ModelType.FAST_COMPLETION or cap.speed_score >= 8
