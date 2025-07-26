@@ -153,6 +153,13 @@ class AgentOrchestrator:
         
         debug_print("Analyzing request with directive format")
         
+        # Check if this is a summary/analysis request that needs fresh context
+        summary_keywords = ["summary", "summarize", "analyze", "overview", "list", "show", "describe", "explain", "functions", "main"]
+        if any(keyword in user_input.lower() for keyword in summary_keywords):
+            debug_print("Summary request detected - refreshing project context")
+            await self.refresh_project_context()
+        
+        
         # Import prompt utilities
         from .prompt_utils import create_directive_user_message
         
@@ -201,7 +208,12 @@ CRITICAL INSTRUCTIONS:
         
         response = await self.provider.chat_completion(messages, model_config)
         
+        # Clean the response to remove thinking tags and artifacts
+        from .response_cleaner import clean_llm_response
+        cleaned_response = clean_llm_response(response.content)
+        
         debug_print(f"Raw analysis response: {response.content}")
+        debug_print(f"Cleaned analysis response: {cleaned_response}")
         debug_print(f"Response length: {len(response.content)} characters")
         
         # Debug: Check if response starts with valid JSON
@@ -214,16 +226,40 @@ CRITICAL INSTRUCTIONS:
         else:
             debug_print("Response does NOT start with '{' - contains extra text")
         
-        # Try to parse JSON with multiple strategies
-        parsed_json = self._parse_analysis_json(response.content)
+        # Try to parse JSON with multiple strategies using cleaned response
+        parsed_json = self._parse_analysis_json(cleaned_response)
         
         if parsed_json:
             debug_print(f"Successfully parsed analysis: {parsed_json}")
+            
+            # Check if this is a file analysis request that needs the proper workflow
+            file_extensions = ['.py', '.js', '.ts', '.java', '.cpp', '.c', '.go', '.rs', '.rb', '.php']
+            analysis_verbs = ['summarize', 'analyze', 'show', 'read', 'examine', 'review', 'check', 'list', 'display']
+            content_analysis_patterns = ["from", "in", "of", "inside", "within"]
+            content_types = ["functions", "function", "classes", "class", "methods", "method", "variables", "variable", "imports", "import"]
+            common_filenames = ['orchestrator', 'main', 'core', 'app', 'index', 'utils', 'config', 'base', 'server', 'client']
+            
+            # Check for direct file analysis (e.g., "summarize X.py" or "summarize orchestrator")
+            has_file_extension = any(ext in user_input.lower() for ext in file_extensions)
+            has_analysis_verb = any(verb in user_input.lower() for verb in analysis_verbs)
+            has_common_filename = any(f' {name} ' in f' {user_input.lower()} ' or f' {name}.' in user_input.lower() or user_input.lower().endswith(f' {name}') or user_input.lower().startswith(f'{name} ') for name in common_filenames)
+            
+            # Check for content analysis (e.g., "functions from X")
+            has_content_type = any(content_type in user_input.lower() for content_type in content_types)
+            has_file_reference = any(pattern in user_input.lower() for pattern in content_analysis_patterns) and ('.py' in user_input.lower() or any(word in user_input.lower() for word in ['file', 'module', 'script']))
+            
+            if (has_file_extension and has_analysis_verb) or (has_common_filename and has_analysis_verb) or (has_content_type and has_file_reference):
+                tools_needed = parsed_json.get("tools_needed", [])
+                # If it doesn't have both search and file tools, use the fallback
+                if not ("search" in tools_needed and "file" in tools_needed):
+                    debug_print("Content analysis request but incorrect tools detected - using intelligent fallback")
+                    return self._create_intelligent_fallback(user_input, cleaned_response)
+            
             return parsed_json
         else:
             debug_print("All JSON parsing strategies failed, using intelligent fallback")
             # Create intelligent fallback based on content analysis
-            return self._create_intelligent_fallback(user_input, response.content)
+            return self._create_intelligent_fallback(user_input, cleaned_response)
     
     def _parse_analysis_json(self, response_content: str) -> Optional[Dict[str, Any]]:
         """Try multiple strategies to parse JSON from model response"""
@@ -405,25 +441,51 @@ CRITICAL INSTRUCTIONS:
         # Analyze user input to determine likely tool needs
         likely_tools = []
         
-        # File-related keywords
-        if any(word in user_lower for word in ['file', 'read', 'write', 'create', 'edit', 'show', 'cat']):
-            likely_tools.append("file")
+        # Any request that mentions a specific file needs search + file
+        # This includes: "summarize X.py", "analyze Y.js", "show me Z.ts", "read main.py", etc.
+        file_extensions = ['.py', '.js', '.ts', '.java', '.cpp', '.c', '.go', '.rs', '.rb', '.php']
+        analysis_verbs = ['summarize', 'analyze', 'show', 'read', 'examine', 'review', 'check', 'list', 'display']
+        common_filenames = ['orchestrator', 'main', 'core', 'app', 'index', 'utils', 'config', 'base', 'server', 'client']
         
-        # Search-related keywords  
-        if any(word in user_lower for word in ['find', 'search', 'look', 'grep', 'locate']):
-            likely_tools.append("search")
-            
-        # Git-related keywords
-        if any(word in user_lower for word in ['git', 'commit', 'branch', 'status', 'diff']):
-            likely_tools.append("git")
-            
-        # Refactor-related keywords
-        if any(word in user_lower for word in ['refactor', 'rename', 'extract', 'move']):
-            likely_tools.append("refactor")
+        # Check if request mentions a specific file (with extension or common filename)
+        has_file_extension = any(ext in user_lower for ext in file_extensions)
+        has_common_filename = any(f' {name} ' in f' {user_lower} ' or f' {name}.' in user_lower or user_lower.endswith(f' {name}') or user_lower.startswith(f'{name} ') for name in common_filenames)
+        has_analysis_verb = any(verb in user_lower for verb in analysis_verbs)
         
-        # Debug-related keywords
-        if any(word in user_lower for word in ['debug', 'error', 'bug', 'fix', 'problem']):
-            likely_tools.append("debug")
+        # Also check for content analysis patterns 
+        content_analysis_patterns = ["from", "in", "of", "inside", "within"]
+        content_types = [
+            "functions", "function", "classes", "class", "methods", "method", 
+            "variables", "variable", "imports", "import", "constants", "constant",
+            "components", "component", "modules", "module", "definitions", "definition"
+        ]
+        
+        has_content_type = any(content_type in user_lower for content_type in content_types)
+        has_file_reference = any(pattern in user_lower for pattern in content_analysis_patterns) and ('.py' in user_lower or any(word in user_lower for word in ['file', 'module', 'script']))
+        
+        # If asking about a specific file OR asking for content from a file
+        if (has_file_extension and has_analysis_verb) or (has_common_filename and has_analysis_verb) or (has_content_type and has_file_reference):
+            likely_tools = ["search", "file"]  # Only these two tools for file analysis
+        else:
+            # File-related keywords (but not for file analysis requests, which are handled above)
+            if any(word in user_lower for word in ['read', 'write', 'create', 'edit', 'show', 'cat']):
+                likely_tools.append("file")
+            
+            # Search-related keywords  
+            if any(word in user_lower for word in ['find', 'search', 'look', 'grep', 'locate']):
+                likely_tools.append("search")
+                
+            # Git-related keywords
+            if any(word in user_lower for word in ['git', 'commit', 'branch', 'status', 'diff']):
+                likely_tools.append("git")
+                
+            # Refactor-related keywords
+            if any(word in user_lower for word in ['refactor', 'rename', 'extract', 'move']):
+                likely_tools.append("refactor")
+            
+            # Debug-related keywords
+            if any(word in user_lower for word in ['debug', 'error', 'bug', 'fix', 'problem']):
+                likely_tools.append("debug")
         
         # Determine complexity
         complexity = "low"
@@ -451,15 +513,58 @@ CRITICAL INSTRUCTIONS:
         # Generate execution steps for the fallback
         execution_steps = []
         if final_tools:
-            for i, tool in enumerate(final_tools):
-                raw_params = self._generate_tool_parameters(tool, user_input)
-                validated_params = self._validate_and_fix_tool_parameters(tool, raw_params)
+            # Special workflow for file analysis requests
+            file_extensions = ['.py', '.js', '.ts', '.java', '.cpp', '.c', '.go', '.rs', '.rb', '.php']
+            analysis_verbs = ['summarize', 'analyze', 'show', 'read', 'examine', 'review', 'check', 'list', 'display']
+            content_analysis_patterns = ["from", "in", "of", "inside", "within"]
+            content_types = ["functions", "function", "classes", "class", "methods", "method", "variables", "variable", "imports", "import"]
+            common_filenames = ['orchestrator', 'main', 'core', 'app', 'index', 'utils', 'config', 'base', 'server', 'client']
+            
+            # Check for direct file analysis (e.g., "summarize X.py" or "summarize orchestrator")
+            has_file_extension = any(ext in user_lower for ext in file_extensions)
+            has_analysis_verb = any(verb in user_lower for verb in analysis_verbs)
+            has_common_filename = any(f' {name} ' in f' {user_lower} ' or f' {name}.' in user_lower or user_lower.endswith(f' {name}') or user_lower.startswith(f'{name} ') for name in common_filenames)
+            
+            # Check for content analysis (e.g., "functions from X")
+            has_content_type = any(content_type in user_lower for content_type in content_types)
+            has_file_reference = any(pattern in user_lower for pattern in content_analysis_patterns) and ('.py' in user_lower or any(word in user_lower for word in ['file', 'module', 'script']))
+            
+            if "search" in final_tools and "file" in final_tools and ((has_file_extension and has_analysis_verb) or (has_common_filename and has_analysis_verb) or (has_content_type and has_file_reference)):
+                # Step 1: Find the file
+                search_params = self._generate_tool_parameters("search", user_input)
+                search_params = self._validate_and_fix_tool_parameters("search", search_params)
                 execution_steps.append({
-                    "step": f"Use {tool} to {self._get_tool_action_description(tool, user_input)}",
-                    "tool": tool,
-                    "parameters": validated_params,
-                    "dependencies": [f"step_{i}"] if i > 0 else []
+                    "step": "Search for target file",
+                    "tool": "search", 
+                    "parameters": search_params,
+                    "dependencies": []
                 })
+                
+                # Step 2: Read the file and extract functions
+                file_params = {
+                    "action": "read",
+                    "path": "{{search_result}}"  # Will be resolved from step 1
+                }
+                execution_steps.append({
+                    "step": "Read file and analyze functions",
+                    "tool": "file",
+                    "parameters": file_params,
+                    "dependencies": ["step_1"]
+                })
+            else:
+                # Standard workflow for other requests
+                for i, tool in enumerate(final_tools):
+                    raw_params = self._generate_tool_parameters(tool, user_input)
+                    validated_params = self._validate_and_fix_tool_parameters(tool, raw_params)
+                    
+                    step_desc = f"Use {tool} to {self._get_tool_action_description(tool, user_input)}"
+                    
+                    execution_steps.append({
+                        "step": step_desc,
+                        "tool": tool,
+                        "parameters": validated_params,
+                        "dependencies": [f"step_{i}"] if i > 0 else []
+                    })
         
         fallback = {
             "requires_tools": len(final_tools) > 0,
@@ -612,6 +717,41 @@ CRITICAL INSTRUCTIONS:
             else:
                 search_term = user_input
             
+            # Handle file analysis requests: "summarize X.py", "functions from Y", etc.
+            file_extensions = ['.py', '.js', '.ts', '.java', '.cpp', '.c', '.go', '.rs', '.rb', '.php']
+            content_analysis_patterns = ["from", "in", "of", "inside", "within"]
+            analysis_verbs = ['summarize', 'analyze', 'show', 'read', 'examine', 'review', 'check', 'list', 'display']
+            common_filenames = ['orchestrator', 'main', 'core', 'app', 'index', 'utils', 'config', 'base', 'server', 'client']
+            
+            # Check for either direct file mention or content analysis pattern
+            has_file_extension = any(ext in user_lower for ext in file_extensions)
+            has_content_pattern = any(pattern in user_lower for pattern in content_analysis_patterns)
+            has_analysis_verb = any(verb in user_lower for verb in analysis_verbs)
+            has_common_filename = any(f' {name} ' in f' {user_lower} ' or f' {name}.' in user_lower or user_lower.endswith(f' {name}') or user_lower.startswith(f'{name} ') for name in common_filenames)
+            
+            if has_file_extension or has_content_pattern or (has_analysis_verb and has_common_filename):
+                # Extract the file name from the request
+                words = user_input.split()
+                target_file = None
+                
+                # Look for file extensions or common module names
+                for word in words:
+                    word_lower = word.lower().rstrip('.,!?')
+                    if (word_lower.endswith(tuple(file_extensions)) or 
+                        word_lower in common_filenames):
+                        
+                        if any(ext in word_lower for ext in file_extensions):
+                            target_file = word_lower
+                        else:
+                            target_file = f"{word_lower}.py"  # Default to .py
+                        break
+                
+                if target_file:
+                    return {
+                        "query": target_file,
+                        "search_type": "filename"
+                    }
+            
             # Determine if this should be a filename search
             filename_indicators = [
                 "main", "app", "entry", "index", "__init__", 
@@ -626,6 +766,8 @@ CRITICAL INSTRUCTIONS:
                     search_term = "main.py|app.py|index.py|start.py"
                 elif "__init__" in search_term.lower():
                     search_term = "__init__.py"
+                elif "orchestrator" in search_term.lower():
+                    search_term = "orchestrator.py"
             
             return {
                 "query": search_term,
@@ -633,8 +775,14 @@ CRITICAL INSTRUCTIONS:
             }
         
         elif tool == "file":
+            # Check if this is a function listing request - should search first, not read directly
+            if any(phrase in user_lower for phrase in ["functions of", "functions in", "main functions", "list functions"]):
+                # For function listing, we need to search for the file first
+                # This should not generate file parameters directly
+                return {"action": "search_first_then_read"}
+            
             # Determine file operation
-            if any(word in user_lower for word in ["read", "show", "display", "cat"]):
+            elif any(word in user_lower for word in ["read", "show", "display", "cat"]):
                 return {"action": "read", "path": "determined_at_runtime"}
             elif any(word in user_lower for word in ["write", "create", "edit"]):
                 # Extract filename and generate content for write operations
@@ -1090,11 +1238,16 @@ Set needs_clarification to true when:
                             result=tool_result.data
                         )
                         # Show more detailed results for debugging
-                        content_preview = (tool_result.content or "No content")[:200]
-                        data_preview = str(tool_result.data)[:200] if tool_result.data else "No data"
-                        results.append(f"✅ Completed: {content_preview}")
-                        if tool_result.data:
-                            results.append(f"📊 Data: {data_preview}")
+                        # For summary steps, show the full content instead of truncated data
+                        if next_step.tool == "summary" and tool_result.content:
+                            results.append(f"✅ Completed: Summary generated")
+                            results.append(f"\n{tool_result.content}")
+                        else:
+                            content_preview = (tool_result.content or "No content")[:200]
+                            data_preview = str(tool_result.data)[:200] if tool_result.data else "No data"
+                            results.append(f"✅ Completed: {content_preview}")
+                            if tool_result.data:
+                                results.append(f"📊 Data: {data_preview}")
                     else:
                         self.task_planner.update_step_status(
                             plan.id, next_step.id, TaskStatus.FAILED, 
@@ -1253,18 +1406,23 @@ Set needs_clarification to true when:
         
         response = await self.provider.chat_completion(messages, model_config)
         
-        debug_print(f"Simple response analysis: {response.content}")
+        # Clean the response to remove thinking tags and artifacts
+        from .response_cleaner import clean_llm_response
+        cleaned_response = clean_llm_response(response.content)
+        
+        debug_print(f"Simple response analysis: {cleaned_response}")
         
         # For simple responses, we expect requires_tools=false, so we can just return a message
         try:
-            parsed = json.loads(response.content)
+            parsed = json.loads(cleaned_response)
             if parsed.get("requires_tools", False):
                 debug_print("Simple response indicated tools needed - this shouldn't happen")
             # Return a simple message based on the analysis
             return f"Based on my analysis: This appears to be a {parsed.get('complexity', 'general')} task. {parsed.get('action_sequence', ['provide information'])[0] if parsed.get('action_sequence') else 'I can provide information about this.'}"
         except json.JSONDecodeError:
             debug_print("Simple response JSON parsing failed")
-            return "I can help with that request. Please let me know if you need more specific assistance."
+            # Return the cleaned response directly if it's not JSON
+            return cleaned_response if cleaned_response else "I can help with that request. Please let me know if you need more specific assistance."
     
     def _select_model(self, task_type: str) -> str:
         """Select appropriate model based on task type and configuration"""
@@ -1333,6 +1491,20 @@ Set needs_clarification to true when:
             )
         except Exception as e:
             print(f"Warning: Could not build project context: {e}")
+    
+    async def refresh_project_context(self) -> None:
+        """Force refresh of project context, ignoring cached data"""
+        if self.context_manager:
+            try:
+                # Force rebuild context
+                self.context.project_context = await self.context_manager.build_context()
+                
+                # Update session with fresh context
+                self.session_manager.update_session(
+                    project_context=self.context_manager.to_dict() if self.context_manager and self.context.project_context else None
+                )
+            except Exception as e:
+                print(f"Warning: Could not refresh project context: {e}")
     
     def get_project_summary(self) -> str:
         """Get a summary of the project for the LLM"""
@@ -1570,14 +1742,10 @@ Set needs_clarification to true when:
             )
             
             response = await self.provider.chat_completion(messages, model_config)
-            generated_content = response.content.strip()
             
-            # Clean up any markdown formatting that might have slipped through
-            if generated_content.startswith('```'):
-                # Remove markdown code blocks
-                lines = generated_content.split('\n')
-                if len(lines) > 2 and lines[0].startswith('```') and lines[-1].strip() == '```':
-                    generated_content = '\n'.join(lines[1:-1])
+            # Clean the response to remove thinking tags and artifacts
+            from .response_cleaner import clean_llm_response, extract_content_from_markdown
+            generated_content = extract_content_from_markdown(response.content)
             
             # Ensure content is not empty
             if not generated_content or generated_content.isspace():
@@ -1630,24 +1798,55 @@ Set needs_clarification to true when:
             if step.tool == "search" and step.status == TaskStatus.COMPLETED and step.result:
                 # Extract file path from search results
                 if isinstance(step.result, dict):
+                    # First check for results in the top level
                     results = step.result.get('results', [])
                     if results and len(results) > 0:
-                        # Return the first result file path
-                        first_result = results[0]
-                        if isinstance(first_result, dict):
-                            return first_result.get('file', first_result.get('path'))
-                        elif isinstance(first_result, str):
-                            return first_result
-                
-                # Fallback: try to extract from data field
-                if hasattr(step, 'result') and isinstance(step.result, dict):
+                        # Prefer main source files over test files
+                        best_result = self._select_best_file_result(results)
+                        if best_result:
+                            return best_result
+                    
+                    # Then check for results in the data field (search tool format)
                     data = step.result.get('data', {})
                     if isinstance(data, dict):
                         results = data.get('results', [])
-                        if results:
-                            return results[0] if isinstance(results[0], str) else str(results[0])
+                        if results and len(results) > 0:
+                            # Prefer main source files over test files
+                            best_result = self._select_best_file_result(results)
+                            if best_result:
+                                return best_result
         
         return None
+    
+    def _select_best_file_result(self, results: List[Dict[str, Any]]) -> Optional[str]:
+        """Select the best file from search results, preferring main source files over tests"""
+        if not results:
+            return None
+        
+        # Extract file paths
+        file_paths = []
+        for result in results:
+            if isinstance(result, dict):
+                file_path = result.get('file', result.get('path'))
+                if file_path:
+                    file_paths.append(file_path)
+            elif isinstance(result, str):
+                file_paths.append(result)
+        
+        if not file_paths:
+            return None
+        
+        # Prioritize main source files over test files
+        main_files = [f for f in file_paths if '/test' not in f.lower() and 'test_' not in f.lower()]
+        if main_files:
+            # Among main files, prefer src/ over others
+            src_files = [f for f in main_files if '/src/' in f]
+            if src_files:
+                return src_files[0]
+            return main_files[0]
+        
+        # Fallback to first result if no main files found
+        return file_paths[0]
     
     def _get_step_result(self, plan: TaskPlan, step_id: str) -> Optional[Any]:
         """Get result from a specific step"""

@@ -86,11 +86,15 @@ class SummaryTool(BaseTool):
             
             response = await self.llm_provider.chat_completion(messages, model_config)
             
+            # Clean the response to remove thinking tags and artifacts
+            from ..response_cleaner import clean_llm_response
+            cleaned_content = clean_llm_response(response.content)
+            
             return ToolResult(
                 success=True,
-                content=response.content,
+                content=cleaned_content,
                 data={
-                    "summary": response.content,
+                    "summary": cleaned_content,
                     "focus": focus,
                     "data_sources": list(collected_data.keys()) if isinstance(collected_data, dict) else [],
                     "task": task_description
@@ -123,6 +127,10 @@ class SummaryTool(BaseTool):
             else:
                 prompt_parts.append(f"- {context}")
         
+        # Check if this is a file analysis task (define before collected_data section)
+        file_analysis_keywords = ["functions", "methods", "classes", "summarize", "analyze", "list", "content"]
+        is_file_analysis = any(keyword in task_description.lower() for keyword in file_analysis_keywords)
+        
         # Collected data
         if collected_data:
             prompt_parts.append("**Collected Information:**")
@@ -131,6 +139,27 @@ class SummaryTool(BaseTool):
                 prompt_parts.append(f"\n**From {source}:**")
                 
                 if isinstance(data, dict):
+                    # Special handling for file tool results
+                    if source.startswith("file_") and is_file_analysis:
+                        # For file analysis, include the full file content
+                        if "content" in data:
+                            file_content = data["content"]
+                            file_path = data.get("path", "unknown file")
+                            prompt_parts.append(f"**File Content from {file_path}:**")
+                            prompt_parts.append("```")
+                            prompt_parts.append(str(file_content))
+                            prompt_parts.append("```")
+                            continue
+                        elif "data" in data and isinstance(data["data"], str):
+                            # Alternative location for file content
+                            file_content = data["data"]
+                            file_path = data.get("path", "unknown file")
+                            prompt_parts.append(f"**File Content from {file_path}:**")
+                            prompt_parts.append("```")
+                            prompt_parts.append(str(file_content))
+                            prompt_parts.append("```")
+                            continue
+                    
                     if "results" in data:
                         results = data["results"]
                         if isinstance(results, list) and results:
@@ -160,7 +189,7 @@ class SummaryTool(BaseTool):
                     
                     # Handle other data types
                     for key, value in data.items():
-                        if key not in ["results", "files"] and value:
+                        if key not in ["results", "files", "content"] and value:  # Skip content since we handle it specially above
                             if isinstance(value, (list, dict)):
                                 prompt_parts.append(f"- {key}: {len(value)} items" if isinstance(value, list) else f"- {key}: {len(value)} entries")
                             else:
@@ -172,13 +201,30 @@ class SummaryTool(BaseTool):
                     for item in data[:3]:
                         prompt_parts.append(f"  • {str(item)[:100]}...")
                 else:
-                    preview = str(data)[:300] + "..." if len(str(data)) > 300 else str(data)
-                    prompt_parts.append(f"- {preview}")
+                    # Check if this is raw file content
+                    if is_file_analysis and len(str(data)) > 1000:
+                        prompt_parts.append("**File Content:**")
+                        prompt_parts.append("```")
+                        prompt_parts.append(str(data))
+                        prompt_parts.append("```")
+                    else:
+                        preview = str(data)[:300] + "..." if len(str(data)) > 300 else str(data)
+                        prompt_parts.append(f"- {preview}")
         
         # Summary instructions
         prompt_parts.append(f"\n**Please provide a comprehensive {focus} summary that:**")
         
-        if focus == "architecture":
+        # Special instructions for file analysis tasks
+        if is_file_analysis and any("file content" in part.lower() for part in prompt_parts):
+            prompt_parts.extend([
+                "- Analyzes the ACTUAL code provided above",
+                "- Lists the specific functions, classes, and methods found in the code",
+                "- Explains what each major component does based on the actual implementation", 
+                "- Describes the real structure and patterns used in this specific file",
+                "- Does NOT make generic assumptions - only describes what is actually in the code",
+                "- Focuses on the concrete implementation details, not theoretical possibilities"
+            ])
+        elif focus == "architecture":
             prompt_parts.extend([
                 "- Describes the overall code structure and organization",
                 "- Identifies key components and their relationships", 
