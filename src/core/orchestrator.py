@@ -235,20 +235,22 @@ CRITICAL INSTRUCTIONS:
             # Check if this is a file analysis request that needs the proper workflow
             file_extensions = ['.py', '.js', '.ts', '.java', '.cpp', '.c', '.go', '.rs', '.rb', '.php']
             analysis_verbs = ['summarize', 'analyze', 'show', 'read', 'examine', 'review', 'check', 'list', 'display']
+            refactor_verbs = ['refactor', 'restructure', 'reorganize', 'improve', 'optimize']
             content_analysis_patterns = ["from", "in", "of", "inside", "within"]
             content_types = ["functions", "function", "classes", "class", "methods", "method", "variables", "variable", "imports", "import"]
-            common_filenames = ['orchestrator', 'main', 'core', 'app', 'index', 'utils', 'config', 'base', 'server', 'client']
+            common_filenames = ['orchestrator', 'main', 'core', 'app', 'index', 'utils', 'config', 'base', 'server', 'client', 'learning', 'planner', 'context', 'tools', 'providers']
             
-            # Check for direct file analysis (e.g., "summarize X.py" or "summarize orchestrator")
+            # Check for direct file analysis (e.g., "summarize X.py" or "refactor learning")
             has_file_extension = any(ext in user_input.lower() for ext in file_extensions)
             has_analysis_verb = any(verb in user_input.lower() for verb in analysis_verbs)
+            has_refactor_verb = any(verb in user_input.lower() for verb in refactor_verbs)
             has_common_filename = any(f' {name} ' in f' {user_input.lower()} ' or f' {name}.' in user_input.lower() or user_input.lower().endswith(f' {name}') or user_input.lower().startswith(f'{name} ') for name in common_filenames)
             
             # Check for content analysis (e.g., "functions from X")
             has_content_type = any(content_type in user_input.lower() for content_type in content_types)
             has_file_reference = any(pattern in user_input.lower() for pattern in content_analysis_patterns) and ('.py' in user_input.lower() or any(word in user_input.lower() for word in ['file', 'module', 'script']))
             
-            if (has_file_extension and has_analysis_verb) or (has_common_filename and has_analysis_verb) or (has_content_type and has_file_reference):
+            if (has_file_extension and has_analysis_verb) or (has_common_filename and has_analysis_verb) or (has_content_type and has_file_reference) or (has_file_extension and has_refactor_verb) or (has_common_filename and has_refactor_verb):
                 tools_needed = parsed_json.get("tools_needed", [])
                 # If it doesn't have both search and file tools, use the fallback
                 if not ("search" in tools_needed and "file" in tools_needed):
@@ -445,7 +447,7 @@ CRITICAL INSTRUCTIONS:
         # This includes: "summarize X.py", "analyze Y.js", "show me Z.ts", "read main.py", etc.
         file_extensions = ['.py', '.js', '.ts', '.java', '.cpp', '.c', '.go', '.rs', '.rb', '.php']
         analysis_verbs = ['summarize', 'analyze', 'show', 'read', 'examine', 'review', 'check', 'list', 'display']
-        common_filenames = ['orchestrator', 'main', 'core', 'app', 'index', 'utils', 'config', 'base', 'server', 'client']
+        common_filenames = ['orchestrator', 'main', 'core', 'app', 'index', 'utils', 'config', 'base', 'server', 'client', 'learning', 'planner', 'context', 'tools', 'providers']
         
         # Check if request mentions a specific file (with extension or common filename)
         has_file_extension = any(ext in user_lower for ext in file_extensions)
@@ -463,9 +465,12 @@ CRITICAL INSTRUCTIONS:
         has_content_type = any(content_type in user_lower for content_type in content_types)
         has_file_reference = any(pattern in user_lower for pattern in content_analysis_patterns) and ('.py' in user_lower or any(word in user_lower for word in ['file', 'module', 'script']))
         
-        # If asking about a specific file OR asking for content from a file
-        if (has_file_extension and has_analysis_verb) or (has_common_filename and has_analysis_verb) or (has_content_type and has_file_reference):
-            likely_tools = ["search", "file"]  # Only these two tools for file analysis
+        # If asking about a specific file OR asking for content from a file (including refactor requests on specific files)
+        refactor_verbs = ['refactor', 'restructure', 'reorganize', 'improve', 'optimize']
+        has_refactor_verb = any(verb in user_lower for verb in refactor_verbs)
+        
+        if (has_file_extension and has_analysis_verb) or (has_common_filename and has_analysis_verb) or (has_content_type and has_file_reference) or (has_file_extension and has_refactor_verb) or (has_common_filename and has_refactor_verb):
+            likely_tools = ["search", "file"]  # Only these two tools for file analysis/refactoring
         else:
             # File-related keywords (but not for file analysis requests, which are handled above)
             if any(word in user_lower for word in ['read', 'write', 'create', 'edit', 'show', 'cat']):
@@ -513,23 +518,25 @@ CRITICAL INSTRUCTIONS:
         # Generate execution steps for the fallback
         execution_steps = []
         if final_tools:
-            # Special workflow for file analysis requests
+            # Special workflow for file analysis requests (including refactoring)
             file_extensions = ['.py', '.js', '.ts', '.java', '.cpp', '.c', '.go', '.rs', '.rb', '.php']
             analysis_verbs = ['summarize', 'analyze', 'show', 'read', 'examine', 'review', 'check', 'list', 'display']
+            refactor_verbs = ['refactor', 'restructure', 'reorganize', 'improve', 'optimize']
             content_analysis_patterns = ["from", "in", "of", "inside", "within"]
             content_types = ["functions", "function", "classes", "class", "methods", "method", "variables", "variable", "imports", "import"]
-            common_filenames = ['orchestrator', 'main', 'core', 'app', 'index', 'utils', 'config', 'base', 'server', 'client']
+            common_filenames = ['orchestrator', 'main', 'core', 'app', 'index', 'utils', 'config', 'base', 'server', 'client', 'learning', 'planner', 'context', 'tools', 'providers']
             
-            # Check for direct file analysis (e.g., "summarize X.py" or "summarize orchestrator")
+            # Check for direct file analysis (e.g., "summarize X.py", "refactor learning")
             has_file_extension = any(ext in user_lower for ext in file_extensions)
             has_analysis_verb = any(verb in user_lower for verb in analysis_verbs)
+            has_refactor_verb = any(verb in user_lower for verb in refactor_verbs)
             has_common_filename = any(f' {name} ' in f' {user_lower} ' or f' {name}.' in user_lower or user_lower.endswith(f' {name}') or user_lower.startswith(f'{name} ') for name in common_filenames)
             
             # Check for content analysis (e.g., "functions from X")
             has_content_type = any(content_type in user_lower for content_type in content_types)
             has_file_reference = any(pattern in user_lower for pattern in content_analysis_patterns) and ('.py' in user_lower or any(word in user_lower for word in ['file', 'module', 'script']))
             
-            if "search" in final_tools and "file" in final_tools and ((has_file_extension and has_analysis_verb) or (has_common_filename and has_analysis_verb) or (has_content_type and has_file_reference)):
+            if "search" in final_tools and "file" in final_tools and ((has_file_extension and has_analysis_verb) or (has_common_filename and has_analysis_verb) or (has_content_type and has_file_reference) or (has_file_extension and has_refactor_verb) or (has_common_filename and has_refactor_verb)):
                 # Step 1: Find the file
                 search_params = self._generate_tool_parameters("search", user_input)
                 search_params = self._validate_and_fix_tool_parameters("search", search_params)
@@ -717,19 +724,21 @@ CRITICAL INSTRUCTIONS:
             else:
                 search_term = user_input
             
-            # Handle file analysis requests: "summarize X.py", "functions from Y", etc.
+            # Handle file analysis requests: "summarize X.py", "functions from Y", "refactor Z.py", etc.
             file_extensions = ['.py', '.js', '.ts', '.java', '.cpp', '.c', '.go', '.rs', '.rb', '.php']
             content_analysis_patterns = ["from", "in", "of", "inside", "within"]
             analysis_verbs = ['summarize', 'analyze', 'show', 'read', 'examine', 'review', 'check', 'list', 'display']
-            common_filenames = ['orchestrator', 'main', 'core', 'app', 'index', 'utils', 'config', 'base', 'server', 'client']
+            refactor_verbs = ['refactor', 'restructure', 'reorganize', 'improve', 'optimize']
+            common_filenames = ['orchestrator', 'main', 'core', 'app', 'index', 'utils', 'config', 'base', 'server', 'client', 'learning', 'planner', 'context', 'tools', 'providers']
             
             # Check for either direct file mention or content analysis pattern
             has_file_extension = any(ext in user_lower for ext in file_extensions)
             has_content_pattern = any(pattern in user_lower for pattern in content_analysis_patterns)
             has_analysis_verb = any(verb in user_lower for verb in analysis_verbs)
+            has_refactor_verb = any(verb in user_lower for verb in refactor_verbs)
             has_common_filename = any(f' {name} ' in f' {user_lower} ' or f' {name}.' in user_lower or user_lower.endswith(f' {name}') or user_lower.startswith(f'{name} ') for name in common_filenames)
             
-            if has_file_extension or has_content_pattern or (has_analysis_verb and has_common_filename):
+            if has_file_extension or has_content_pattern or (has_analysis_verb and has_common_filename) or (has_refactor_verb and has_common_filename) or (has_refactor_verb and has_file_extension):
                 # Extract the file name from the request
                 words = user_input.split()
                 target_file = None
