@@ -484,9 +484,12 @@ CRITICAL INSTRUCTIONS:
             if any(word in user_lower for word in ['git', 'commit', 'branch', 'status', 'diff']):
                 likely_tools.append("git")
                 
-            # Refactor-related keywords
-            if any(word in user_lower for word in ['refactor', 'rename', 'extract', 'move']):
-                likely_tools.append("refactor")
+            # Refactor-related keywords (only for non-file-specific refactoring)
+            refactor_keywords = ['refactor', 'rename', 'extract', 'move']
+            if any(word in user_lower for word in refactor_keywords):
+                # Only add refactor tool if this isn't a file-specific refactor request
+                if not (has_file_extension or has_common_filename):
+                    likely_tools.append("refactor")
             
             # Debug-related keywords
             if any(word in user_lower for word in ['debug', 'error', 'bug', 'fix', 'problem']):
