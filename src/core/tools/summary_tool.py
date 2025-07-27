@@ -146,11 +146,27 @@ class SummaryTool(BaseTool):
                 if isinstance(data, dict):
                     debug_print(f"Processing data from {source}: {list(data.keys())}")
                     
-                    # Special handling for file tool results
-                    if source.startswith("file_") and is_file_analysis:
+                    # Special handling for file tool results (including nuclear multi-file reads)
+                    is_file_step = (source.startswith("file_") or 
+                                   (is_file_analysis and isinstance(data, dict) and 
+                                    ("files_read" in data or "file_contents" in data or "content" in data)))
+                    
+                    if is_file_step and is_file_analysis:
                         debug_print(f"File tool result detected for {source}")
-                        # For file analysis, include the full file content
-                        if "content" in data:
+                        
+                        # Handle multi-file read results (nuclear approach)
+                        if "file_contents" in data and isinstance(data["file_contents"], dict):
+                            debug_print(f"Multi-file content detected: {len(data['file_contents'])} files")
+                            for file_path, file_content in data["file_contents"].items():
+                                if file_content and len(str(file_content).strip()) > 0:
+                                    prompt_parts.append(f"**File Content from {file_path}:**")
+                                    prompt_parts.append("```")
+                                    prompt_parts.append(str(file_content))
+                                    prompt_parts.append("```")
+                                    prompt_parts.append("")  # Add spacing
+                            continue
+                        # Handle single file read results
+                        elif "content" in data:
                             file_content = data["content"]
                             file_path = data.get("path", "unknown file")
                             debug_print(f"Found file content ({len(str(file_content))} chars) from {file_path}")
@@ -159,20 +175,10 @@ class SummaryTool(BaseTool):
                             prompt_parts.append(str(file_content))
                             prompt_parts.append("```")
                             continue
-                        elif "data" in data and isinstance(data["data"], str):
-                            # Alternative location for file content
-                            file_content = data["data"]
-                            file_path = data.get("path", "unknown file")
-                            debug_print(f"Found file content in data field ({len(str(file_content))} chars) from {file_path}")
-                            prompt_parts.append(f"**File Content from {file_path}:**")
-                            prompt_parts.append("```")
-                            prompt_parts.append(str(file_content))
-                            prompt_parts.append("```")
-                            continue
                         else:
                             debug_print(f"No file content found in file tool result: {list(data.keys())}")
                     elif is_file_analysis:
-                        debug_print(f"File analysis task but {source} doesn't start with 'file_'")
+                        debug_print(f"File analysis task but {source} not detected as file step")
                 
                     # Also check if this data contains file content from collected_data structure
                     # The file tool result might be stored with a different key structure

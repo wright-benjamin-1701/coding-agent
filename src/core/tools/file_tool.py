@@ -19,14 +19,27 @@ class FileTool(BaseTool):
             ToolParameter(
                 name="action",
                 type="string",
-                description="Action to perform: read, write, list, exists, delete",
+                description="Action to perform: read, read_multiple, write, list, exists, delete",
                 required=True
             ),
             ToolParameter(
                 name="path",
                 type="string", 
                 description="File or directory path",
-                required=True
+                required=False
+            ),
+            ToolParameter(
+                name="paths",
+                type="array",
+                description="List of file paths (for read_multiple action)",
+                required=False
+            ),
+            ToolParameter(
+                name="max_files",
+                type="number",
+                description="Maximum number of files to read (for read_multiple action)",
+                required=False,
+                default=5
             ),
             ToolParameter(
                 name="content",
@@ -45,10 +58,19 @@ class FileTool(BaseTool):
     
     async def execute(self, **kwargs) -> ToolResult:
         """Execute file operation"""
-        if not self.validate_parameters(kwargs):
-            return ToolResult(success=False, error="Invalid parameters")
-        
         action = kwargs.get("action")
+        
+        # Custom parameter validation since path is not always required
+        if not action:
+            return ToolResult(success=False, error="Action parameter is required")
+        
+        # Check required parameters based on action
+        if action in ["read", "write", "list", "exists", "delete"] and not kwargs.get("path"):
+            return ToolResult(success=False, error=f"Path parameter is required for {action} action")
+        
+        if action == "read_multiple" and not kwargs.get("paths"):
+            return ToolResult(success=False, error="Paths parameter is required for read_multiple action")
+        
         path = kwargs.get("path")
         content = kwargs.get("content")
         encoding = kwargs.get("encoding", "utf-8")
@@ -56,6 +78,8 @@ class FileTool(BaseTool):
         try:
             if action == "read":
                 return await self._read_file(path, encoding)
+            elif action == "read_multiple":
+                return await self._read_multiple_files(kwargs.get("paths", []), kwargs.get("max_files", 5), encoding)
             elif action == "write":
                 return await self._write_file(path, content, encoding)
             elif action == "list":
@@ -95,6 +119,72 @@ class FileTool(BaseTool):
             )
         except UnicodeDecodeError:
             return ToolResult(success=False, error=f"Cannot decode file with {encoding} encoding")
+    
+    async def _read_multiple_files(self, paths, max_files: int, encoding: str) -> ToolResult:
+        """Read multiple files and combine their content"""
+        
+        # Handle template substitution if paths is a string template
+        if isinstance(paths, str) and paths.startswith("{{") and paths.endswith("}}"):
+            # This will be resolved by the orchestrator during execution
+            return ToolResult(success=False, error=f"Template not resolved: {paths}")
+        
+        # Ensure paths is a list
+        if isinstance(paths, str):
+            paths = [paths]
+        elif not isinstance(paths, list):
+            paths = []
+        
+        if not paths:
+            return ToolResult(success=False, error="No file paths provided")
+        
+        # Limit number of files
+        paths = paths[:max_files]
+        
+        file_contents = {}
+        files_read = 0
+        total_content = ""
+        
+        for file_path in paths:
+            if files_read >= max_files:
+                break
+                
+            try:
+                path_obj = Path(file_path)
+                
+                if not path_obj.exists():
+                    continue
+                
+                if not path_obj.is_file():
+                    continue
+                
+                # Read file content
+                async with aiofiles.open(path_obj, 'r', encoding=encoding) as f:
+                    content = await f.read()
+                
+                # Truncate very long files
+                if len(content) > 10000:  # 10KB limit per file
+                    content = content[:10000] + "\n... [TRUNCATED]"
+                
+                file_contents[str(path_obj)] = content
+                total_content += f"\n\n=== FILE: {path_obj} ===\n{content}\n"
+                files_read += 1
+                
+            except (UnicodeDecodeError, PermissionError, OSError):
+                # Skip files that can't be read
+                continue
+        
+        if files_read == 0:
+            return ToolResult(success=False, error="No files could be read")
+        
+        return ToolResult(
+            success=True,
+            content=total_content,
+            data={
+                "files_read": files_read,
+                "file_contents": file_contents,
+                "total_files_attempted": len(paths)
+            }
+        )
     
     async def _write_file(self, path: str, content: str, encoding: str) -> ToolResult:
         """Write content to file"""

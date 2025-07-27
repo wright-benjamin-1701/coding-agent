@@ -451,25 +451,31 @@ CRITICAL INSTRUCTIONS:
         
         # Check if request mentions a specific file (with extension or common filename)
         has_file_extension = any(ext in user_lower for ext in file_extensions)
-        has_common_filename = any(f' {name} ' in f' {user_lower} ' or f' {name}.' in user_lower or user_lower.endswith(f' {name}') or user_lower.startswith(f'{name} ') for name in common_filenames)
+        # More flexible filename matching: word boundaries, not just spaces
+        import re
+        has_common_filename = any(re.search(r'\b' + re.escape(name) + r'\b', user_lower) for name in common_filenames)
         has_analysis_verb = any(verb in user_lower for verb in analysis_verbs)
         
         # Also check for content analysis patterns 
-        content_analysis_patterns = ["from", "in", "of", "inside", "within"]
+        content_analysis_patterns = ["from", "in", "of", "inside", "within", "the"]
         content_types = [
             "functions", "function", "classes", "class", "methods", "method", 
             "variables", "variable", "imports", "import", "constants", "constant",
-            "components", "component", "modules", "module", "definitions", "definition"
+            "components", "component", "modules", "module", "definitions", "definition",
+            "files", "file"
         ]
         
         has_content_type = any(content_type in user_lower for content_type in content_types)
-        has_file_reference = any(pattern in user_lower for pattern in content_analysis_patterns) and ('.py' in user_lower or any(word in user_lower for word in ['file', 'module', 'script']))
+        has_file_reference = any(pattern in user_lower for pattern in content_analysis_patterns) and ('.py' in user_lower or any(word in user_lower for word in ['file', 'module', 'script', 'project', 'codebase']))
+        
+        # Special case: "main files" or "project files" should also trigger file analysis
+        has_main_files_pattern = ('main' in user_lower and 'files' in user_lower) or ('project' in user_lower and any(word in user_lower for word in ['files', 'structure', 'overview']))
         
         # If asking about a specific file OR asking for content from a file (including refactor requests on specific files)
         refactor_verbs = ['refactor', 'restructure', 'reorganize', 'improve', 'optimize']
         has_refactor_verb = any(verb in user_lower for verb in refactor_verbs)
         
-        if (has_file_extension and has_analysis_verb) or (has_common_filename and has_analysis_verb) or (has_content_type and has_file_reference) or (has_file_extension and has_refactor_verb) or (has_common_filename and has_refactor_verb):
+        if (has_file_extension and has_analysis_verb) or (has_common_filename and has_analysis_verb) or (has_content_type and has_file_reference) or (has_file_extension and has_refactor_verb) or (has_common_filename and has_refactor_verb) or has_main_files_pattern:
             likely_tools = ["search", "file"]  # Only these two tools for file analysis/refactoring
         else:
             # File-related keywords (but not for file analysis requests, which are handled above)
@@ -511,12 +517,22 @@ CRITICAL INSTRUCTIONS:
         # Combine likely tools with response-mentioned tools
         final_tools = list(set(likely_tools + response_mentioned_tools))
         
+        # NUCLEAR APPROACH: For analysis requests, ensure we always have search+file tools even if not detected
+        analysis_keywords = ["analysis", "analyze", "summary", "summarize", "explain", "understand", "describe", "overview", "what", "how", "show", "list", "important", "main", "core", "project"]
+        is_analysis_request = any(word in user_lower for word in analysis_keywords)
+        
+        if is_analysis_request and not final_tools:
+            # If it's an analysis request but no tools detected, add search+file as minimum
+            final_tools = ["search", "file"]
+            debug_print("Nuclear mode: Added search+file tools for analysis request with no detected tools")
+        
         # Filter to only available tools and limit to most relevant
         available_tools = list(self.tools.keys())
         final_tools = [tool for tool in final_tools if tool in available_tools]
         
-        # Limit to max 2 tools to avoid overwhelming fallback plans
-        final_tools = final_tools[:2]
+        # For analysis requests, allow more tools
+        max_tools = 3 if is_analysis_request else 2
+        final_tools = final_tools[:max_tools]
         
         # Generate execution steps for the fallback
         execution_steps = []
@@ -525,21 +541,24 @@ CRITICAL INSTRUCTIONS:
             file_extensions = ['.py', '.js', '.ts', '.java', '.cpp', '.c', '.go', '.rs', '.rb', '.php']
             analysis_verbs = ['summarize', 'analyze', 'show', 'read', 'examine', 'review', 'check', 'list', 'display']
             refactor_verbs = ['refactor', 'restructure', 'reorganize', 'improve', 'optimize']
-            content_analysis_patterns = ["from", "in", "of", "inside", "within"]
-            content_types = ["functions", "function", "classes", "class", "methods", "method", "variables", "variable", "imports", "import"]
+            content_analysis_patterns = ["from", "in", "of", "inside", "within", "the"]
+            content_types = ["functions", "function", "classes", "class", "methods", "method", "variables", "variable", "imports", "import", "files", "file"]
             common_filenames = ['orchestrator', 'main', 'core', 'app', 'index', 'utils', 'config', 'base', 'server', 'client', 'learning', 'planner', 'context', 'tools', 'providers']
             
             # Check for direct file analysis (e.g., "summarize X.py", "refactor learning")
             has_file_extension = any(ext in user_lower for ext in file_extensions)
             has_analysis_verb = any(verb in user_lower for verb in analysis_verbs)
             has_refactor_verb = any(verb in user_lower for verb in refactor_verbs)
-            has_common_filename = any(f' {name} ' in f' {user_lower} ' or f' {name}.' in user_lower or user_lower.endswith(f' {name}') or user_lower.startswith(f'{name} ') for name in common_filenames)
+            has_common_filename = any(re.search(r'\b' + re.escape(name) + r'\b', user_lower) for name in common_filenames)
             
             # Check for content analysis (e.g., "functions from X")
             has_content_type = any(content_type in user_lower for content_type in content_types)
-            has_file_reference = any(pattern in user_lower for pattern in content_analysis_patterns) and ('.py' in user_lower or any(word in user_lower for word in ['file', 'module', 'script']))
+            has_file_reference = any(pattern in user_lower for pattern in content_analysis_patterns) and ('.py' in user_lower or any(word in user_lower for word in ['file', 'module', 'script', 'project', 'codebase']))
             
-            if "search" in final_tools and "file" in final_tools and ((has_file_extension and has_analysis_verb) or (has_common_filename and has_analysis_verb) or (has_content_type and has_file_reference) or (has_file_extension and has_refactor_verb) or (has_common_filename and has_refactor_verb)):
+            # Special case: "main files" or "project files" should also trigger file analysis
+            has_main_files_pattern = ('main' in user_lower and 'files' in user_lower) or ('project' in user_lower and any(word in user_lower for word in ['files', 'structure', 'overview']))
+            
+            if "search" in final_tools and "file" in final_tools and ((has_file_extension and has_analysis_verb) or (has_common_filename and has_analysis_verb) or (has_content_type and has_file_reference) or (has_file_extension and has_refactor_verb) or (has_common_filename and has_refactor_verb) or has_main_files_pattern):
                 # Step 1: Find the file
                 search_params = self._generate_tool_parameters("search", user_input)
                 search_params = self._validate_and_fix_tool_parameters("search", search_params)
@@ -675,15 +694,110 @@ CRITICAL INSTRUCTIONS:
             }
         )
         
-        # Check if we should add a summary step for analysis tasks
+        # NUCLEAR APPROACH: For ANY analysis/summary request, aggressively collect file content
         tools_needed = task_plan.get("tools_needed", [])
         user_request_lower = user_input.lower()
-        analysis_keywords = ["analysis", "analyze", "summary", "summarize", "explain", "understand", "describe", "overview", "what", "how"]
+        analysis_keywords = ["analysis", "analyze", "summary", "summarize", "explain", "understand", "describe", "overview", "what", "how", "show", "list", "important", "main", "core", "project"]
         
-        should_add_summary = (
-            any(word in user_request_lower for word in analysis_keywords) or
-            ("file" in tools_needed and "search" in tools_needed)
-        )
+        should_add_file_collection = any(word in user_request_lower for word in analysis_keywords)
+        should_add_summary = should_add_file_collection or ("file" in tools_needed and "search" in tools_needed)
+        
+        if should_add_file_collection:
+            debug_print("🔥 FULL NUCLEAR MODE: Adding multiple aggressive search and file collection steps")
+            
+            # NUCLEAR SEARCH 1: Filename search for important files
+            step_counter = len(steps) + 1
+            filename_search_step = TaskStep(
+                id=f"step_{step_counter}",
+                description="Filename search for important project files",
+                tool="search",
+                parameters={
+                    "query": self._brainstorm_filename_keywords(user_input),
+                    "search_type": "filename",
+                    "file_pattern": "*.py",
+                    "max_results": 25,
+                    "context_lines": 0
+                },
+                dependencies=[steps[-1].id] if steps else [],
+                status=TaskStatus.PENDING,
+                estimated_duration=8
+            )
+            steps.append(filename_search_step)
+            
+            # NUCLEAR SEARCH 2: Function search for key functions
+            step_counter += 1
+            function_search_step = TaskStep(
+                id=f"step_{step_counter}",
+                description="Function search for key methods and functions",
+                tool="search",
+                parameters={
+                    "query": self._brainstorm_function_keywords(user_input),
+                    "search_type": "function",
+                    "file_pattern": "*.py",
+                    "max_results": 25,
+                    "context_lines": 2
+                },
+                dependencies=[steps[-1].id] if steps else [],
+                status=TaskStatus.PENDING,
+                estimated_duration=8
+            )
+            steps.append(function_search_step)
+            
+            # NUCLEAR SEARCH 3: Class search for important classes
+            step_counter += 1
+            class_search_step = TaskStep(
+                id=f"step_{step_counter}",
+                description="Class search for core classes and components",
+                tool="search",
+                parameters={
+                    "query": self._brainstorm_class_keywords(user_input),
+                    "search_type": "class",
+                    "file_pattern": "*.py",
+                    "max_results": 25,
+                    "context_lines": 3
+                },
+                dependencies=[steps[-1].id] if steps else [],
+                status=TaskStatus.PENDING,
+                estimated_duration=8
+            )
+            steps.append(class_search_step)
+            
+            # NUCLEAR SEARCH 4: Text search for important patterns and keywords
+            step_counter += 1
+            text_search_step = TaskStep(
+                id=f"step_{step_counter}",
+                description="Text search for important patterns and documentation",
+                tool="search",
+                parameters={
+                    "query": self._brainstorm_text_keywords(user_input),
+                    "search_type": "text",
+                    "file_pattern": "*",
+                    "max_results": 20,
+                    "context_lines": 2
+                },
+                dependencies=[steps[-1].id] if steps else [],
+                status=TaskStatus.PENDING,
+                estimated_duration=8
+            )
+            steps.append(text_search_step)
+            
+            # NUCLEAR FILE READING: Read all discovered important files
+            step_counter += 1
+            file_reading_step = TaskStep(
+                id=f"step_{step_counter}",
+                description="Read and analyze content from ALL discovered important files",
+                tool="file", 
+                parameters={
+                    "action": "read_multiple",
+                    "paths": "{{combined_search_results_top_10}}",
+                    "max_files": 10
+                },
+                dependencies=[f"step_{step_counter-4}", f"step_{step_counter-3}", f"step_{step_counter-2}", f"step_{step_counter-1}"],
+                status=TaskStatus.PENDING,
+                estimated_duration=30
+            )
+            steps.append(file_reading_step)
+            debug_print("🔥 Added FULL NUCLEAR MODE: 4 search types + multi-file reading")
         
         if should_add_summary:
             # Add summary step
@@ -712,6 +826,94 @@ CRITICAL INSTRUCTIONS:
         
         debug_print(f"Created plan '{plan_id}' with {len(steps)} steps")
         return plan
+    
+    def _brainstorm_filename_keywords(self, user_input: str) -> str:
+        """Brainstorm filename-specific keywords for aggressive file discovery"""
+        user_lower = user_input.lower()
+        
+        # Since search tool doesn't support OR, pick the most likely single keyword
+        # Core filenames that are always important, prioritized
+        priority_keywords = ["orchestrator", "main", "core", "app", "config"]
+        
+        # Context-specific keyword selection
+        if any(word in user_lower for word in ["orchestrator", "agent"]):
+            return "orchestrator"
+        elif any(word in user_lower for word in ["main", "entry", "primary"]):
+            return "main"
+        elif any(word in user_lower for word in ["core", "base", "central"]):
+            return "core"
+        elif any(word in user_lower for word in ["app", "application"]):
+            return "app"
+        elif any(word in user_lower for word in ["config", "settings"]):
+            return "config"
+        elif any(word in user_lower for word in ["tools", "utilities"]):
+            return "tool"
+        elif any(word in user_lower for word in ["learning", "ai", "model"]):
+            return "learning"
+        else:
+            # Default to most important - orchestrator for this project
+            return "orchestrator"
+    
+    def _brainstorm_function_keywords(self, user_input: str) -> str:
+        """Brainstorm function-specific keywords for finding key methods"""
+        user_lower = user_input.lower()
+        
+        # Context-specific function selection (single most relevant)
+        if any(word in user_lower for word in ["process", "execute", "run"]):
+            return "process_request"
+        elif any(word in user_lower for word in ["search", "find", "analyze"]):
+            return "search"
+        elif any(word in user_lower for word in ["create", "generate", "build"]):
+            return "create"
+        elif any(word in user_lower for word in ["plan", "workflow", "orchestrat"]):
+            return "execute"
+        elif any(word in user_lower for word in ["summary", "summarize"]):
+            return "generate"
+        else:
+            # Default to most common important function
+            return "execute"
+    
+    def _brainstorm_class_keywords(self, user_input: str) -> str:
+        """Brainstorm class-specific keywords for finding core components"""
+        user_lower = user_input.lower()
+        
+        # Context-specific class selection (single most relevant)
+        if any(word in user_lower for word in ["orchestrator", "agent"]):
+            return "AgentOrchestrator"
+        elif any(word in user_lower for word in ["tool", "search", "file"]):
+            return "Tool"
+        elif any(word in user_lower for word in ["plan", "task", "workflow"]):
+            return "TaskPlan"
+        elif any(word in user_lower for word in ["manager", "handler"]):
+            return "Manager"
+        elif any(word in user_lower for word in ["config", "settings"]):
+            return "Config"
+        elif any(word in user_lower for word in ["provider", "llm", "model"]):
+            return "Provider"
+        else:
+            # Default to most important class
+            return "AgentOrchestrator"
+    
+    def _brainstorm_text_keywords(self, user_input: str) -> str:
+        """Brainstorm text-specific keywords for finding documentation and patterns"""
+        user_lower = user_input.lower()
+        
+        # Context-specific text selection (single most relevant)
+        if any(word in user_lower for word in ["project", "summary", "overview"]):
+            return "description"
+        elif any(word in user_lower for word in ["important", "critical", "key"]):
+            return "important"
+        elif any(word in user_lower for word in ["workflow", "process", "flow"]):
+            return "workflow"
+        elif any(word in user_lower for word in ["todo", "fixme", "note"]):
+            return "TODO"
+        elif any(word in user_lower for word in ["documentation", "docs", "readme"]):
+            return "documentation"
+        elif any(word in user_lower for word in ["architecture", "design", "structure"]):
+            return "architecture"
+        else:
+            # Default to most useful for project understanding
+            return "description"
     
     def _generate_tool_parameters(self, tool: str, user_input: str) -> Dict[str, Any]:
         """Generate appropriate parameters for a tool based on user input"""
@@ -1643,6 +1845,26 @@ Set needs_clarification to true when:
                     else:
                         # Fallback to a reasonable default
                         resolved_params[key] = "src/main.py"
+                elif placeholder == "search_results_top_5":
+                    # Find the top 5 search results from the most recent search
+                    search_results = self._get_latest_search_results(plan, limit=5)
+                    if search_results:
+                        resolved_params[key] = search_results
+                    else:
+                        # Fallback to common important files
+                        resolved_params[key] = ["src/main.py", "src/core/orchestrator.py", "src/core/__init__.py"]
+                elif placeholder == "combined_search_results_top_10":
+                    # Combine results from all search steps and get top 10 unique files
+                    combined_results = self._get_combined_search_results(plan, limit=10)
+                    if combined_results:
+                        resolved_params[key] = combined_results
+                    else:
+                        # Fallback to comprehensive important files list
+                        resolved_params[key] = [
+                            "src/main.py", "src/core/orchestrator.py", "src/core/__init__.py",
+                            "src/core/tools/__init__.py", "src/core/planner.py", "src/core/config.py",
+                            "README.md", "setup.py", "requirements.txt", "src/core/learning.py"
+                        ]
                         debug_print("No search result found, using fallback: src/main.py ")
                 
                 elif placeholder.startswith("step_") and placeholder.endswith("_result"):
@@ -1811,6 +2033,54 @@ Set needs_clarification to true when:
         else:
             return f'# {filename}\n# Generated content\n'
     
+    def _get_combined_search_results(self, plan: TaskPlan, limit: int = 10) -> Optional[List[str]]:
+        """Combine results from ALL search steps and get top N unique files"""
+        all_file_paths = []
+        
+        # Collect results from all completed search steps
+        for step in plan.steps:
+            if step.tool == "search" and step.status == TaskStatus.COMPLETED and step.result:
+                # step.result is the data dict, not ToolResult object
+                if isinstance(step.result, dict) and 'results' in step.result:
+                    results = step.result.get('results', [])
+                    for result in results:
+                        if isinstance(result, dict) and 'file' in result:
+                            all_file_paths.append(result['file'])
+                        elif isinstance(result, str):
+                            all_file_paths.append(result)
+        
+        if not all_file_paths:
+            return None
+        
+        # Remove duplicates while preserving order (first occurrence wins)
+        unique_paths = []
+        seen = set()
+        for path in all_file_paths:
+            if path not in seen:
+                unique_paths.append(path)
+                seen.add(path)
+        
+        # Return top N results
+        return unique_paths[:limit] if unique_paths else None
+
+    def _get_latest_search_results(self, plan: TaskPlan, limit: int = 5) -> Optional[List[str]]:
+        """Get the top N search results from the most recent search"""
+        for step in reversed(plan.steps):
+            if step.tool == "search" and step.status == TaskStatus.COMPLETED and step.result:
+                # step.result is the data dict, not ToolResult object
+                if isinstance(step.result, dict) and 'results' in step.result:
+                    results = step.result.get('results', [])
+                    if results:
+                        # Extract file paths from results, limit to top N
+                        file_paths = []
+                        for result in results[:limit]:
+                            if isinstance(result, dict) and 'file' in result:
+                                file_paths.append(result['file'])
+                            elif isinstance(result, str):
+                                file_paths.append(result)
+                        return file_paths if file_paths else None
+        return None
+
     def _get_latest_search_result(self, plan: TaskPlan) -> Optional[str]:
         """Get the most recent search result from completed steps"""
         for step in reversed(plan.steps):
