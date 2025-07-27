@@ -475,7 +475,11 @@ CRITICAL INSTRUCTIONS:
         refactor_verbs = ['refactor', 'restructure', 'reorganize', 'improve', 'optimize']
         has_refactor_verb = any(verb in user_lower for verb in refactor_verbs)
         
-        if (has_file_extension and has_analysis_verb) or (has_common_filename and has_analysis_verb) or (has_content_type and has_file_reference) or (has_file_extension and has_refactor_verb) or (has_common_filename and has_refactor_verb) or has_main_files_pattern:
+        # Check for direct file requests like "explain orchestrator.py", "summarize main.py", "analyze orchestrator.py"
+        file_request_verbs = ['explain', 'analyze', 'show', 'describe', 'summarize', 'read', 'detail', 'tell', 'about']
+        has_direct_file_request = any(word in user_lower for word in file_request_verbs) and (has_file_extension or has_common_filename)
+        
+        if (has_file_extension and has_analysis_verb) or (has_common_filename and has_analysis_verb) or (has_content_type and has_file_reference) or (has_file_extension and has_refactor_verb) or (has_common_filename and has_refactor_verb) or has_main_files_pattern or has_direct_file_request:
             likely_tools = ["search", "file"]  # Only these two tools for file analysis/refactoring
         else:
             # File-related keywords (but not for file analysis requests, which are handled above)
@@ -517,21 +521,49 @@ CRITICAL INSTRUCTIONS:
         # Combine likely tools with response-mentioned tools
         final_tools = list(set(likely_tools + response_mentioned_tools))
         
-        # NUCLEAR APPROACH: For analysis requests, ensure we always have search+file tools even if not detected
-        analysis_keywords = ["analysis", "analyze", "summary", "summarize", "explain", "understand", "describe", "overview", "what", "how", "show", "list", "important", "main", "core", "project"]
-        is_analysis_request = any(word in user_lower for word in analysis_keywords)
+        # Aggressively trigger search+file for almost ANY request that could benefit from code analysis
         
-        if is_analysis_request and not final_tools:
-            # If it's an analysis request but no tools detected, add search+file as minimum
+        # Super aggressive keyword list - catch everything!
+        ultra_keywords = [
+            # Analysis words
+            "analysis", "analyze", "summary", "summarize", "explain", "understand", "describe", "overview", 
+            "what", "how", "show", "list", "display", "detail", "details", "tell", "about", "regarding",
+            # Action words  
+            "find", "search", "look", "see", "check", "examine", "review", "inspect", "explore", "discover",
+            # Code-related words
+            "code", "file", "function", "class", "method", "module", "component", "structure", "architecture",
+            "implementation", "logic", "algorithm", "workflow", "process", "system", "framework", "library",
+            # Project words
+            "project", "codebase", "repository", "repo", "app", "application", "program", "software", "tool",
+            "main", "core", "important", "key", "primary", "central", "critical", "essential", "significant",
+            # Common file names (without extension)
+            "orchestrator", "main", "index", "app", "core", "base", "config", "settings", "utils", "tools",
+            "manager", "handler", "controller", "service", "provider", "client", "server", "api", "model",
+            # Common verbs that might reference code
+            "run", "execute", "build", "create", "make", "develop", "design", "implement", "write", "read",
+            "open", "load", "import", "export", "generate", "process", "handle", "manage", "control"
+        ]
+        
+        # Check if request mentions ANY of these ultra-aggressive triggers
+        is_nuclear_request = any(word in user_lower for word in ultra_keywords)
+        
+        # Additional catch-all patterns - if the request is longer than 3 words, probably needs file analysis
+        is_complex_request = len(user_input.split()) >= 3
+        
+        # Catch-all: if no tools detected but it looks like a request that could benefit from code analysis
+        needs_nuclear_boost = (is_nuclear_request or is_complex_request) and not final_tools
+        
+        if needs_nuclear_boost:
+            # NUCLEAR: Add search+file as minimum for any potentially code-related request
             final_tools = ["search", "file"]
-            debug_print("Nuclear mode: Added search+file tools for analysis request with no detected tools")
+            debug_print(f"🔥 ULTRA NUCLEAR: Added search+file for request: '{user_input}'")
         
         # Filter to only available tools and limit to most relevant
         available_tools = list(self.tools.keys())
         final_tools = [tool for tool in final_tools if tool in available_tools]
         
-        # For analysis requests, allow more tools
-        max_tools = 3 if is_analysis_request else 2
+        # For nuclear requests, allow more tools (we're going all out!)
+        max_tools = 5 if is_nuclear_request else 3  # Allow even MORE tools for nuclear requests
         final_tools = final_tools[:max_tools]
         
         # Generate execution steps for the fallback
@@ -558,7 +590,11 @@ CRITICAL INSTRUCTIONS:
             # Special case: "main files" or "project files" should also trigger file analysis
             has_main_files_pattern = ('main' in user_lower and 'files' in user_lower) or ('project' in user_lower and any(word in user_lower for word in ['files', 'structure', 'overview']))
             
-            if "search" in final_tools and "file" in final_tools and ((has_file_extension and has_analysis_verb) or (has_common_filename and has_analysis_verb) or (has_content_type and has_file_reference) or (has_file_extension and has_refactor_verb) or (has_common_filename and has_refactor_verb) or has_main_files_pattern):
+            # Check for direct file requests like "explain orchestrator.py", "summarize main.py", "analyze orchestrator.py"  
+            file_request_verbs = ['explain', 'analyze', 'show', 'describe', 'summarize', 'read', 'detail', 'tell', 'about']
+            has_direct_file_request = any(word in user_lower for word in file_request_verbs) and (has_file_extension or has_common_filename)
+            
+            if "search" in final_tools and "file" in final_tools and ((has_file_extension and has_analysis_verb) or (has_common_filename and has_analysis_verb) or (has_content_type and has_file_reference) or (has_file_extension and has_refactor_verb) or (has_common_filename and has_refactor_verb) or has_main_files_pattern or has_direct_file_request):
                 # Step 1: Find the file
                 search_params = self._generate_tool_parameters("search", user_input)
                 search_params = self._validate_and_fix_tool_parameters("search", search_params)
@@ -694,13 +730,84 @@ CRITICAL INSTRUCTIONS:
             }
         )
         
-        # NUCLEAR APPROACH: For ANY analysis/summary request, aggressively collect file content
+        # 🔥 ULTRA NUCLEAR APPROACH: For almost ANY request, aggressively collect file content
         tools_needed = task_plan.get("tools_needed", [])
         user_request_lower = user_input.lower()
-        analysis_keywords = ["analysis", "analyze", "summary", "summarize", "explain", "understand", "describe", "overview", "what", "how", "show", "list", "important", "main", "core", "project"]
         
-        should_add_file_collection = any(word in user_request_lower for word in analysis_keywords)
-        should_add_summary = should_add_file_collection or ("file" in tools_needed and "search" in tools_needed)
+        # 🚀 MAXIMUM NUCLEAR: Brainstorm EVERY possible trigger - intelligence not limitations!
+        # Processing speed/RAM are NOT the limitation - MODEL INTELLIGENCE is. So we go ALL OUT!
+        
+        maximum_nuclear_keywords = [
+            # Basic question words (any question could need code analysis)
+            "what", "how", "why", "when", "where", "who", "which", "can", "could", "would", "should", "will", "does", "do", "is", "are", "was", "were",
+            
+            # Action verbs (any action might need code context)
+            "explain", "show", "tell", "describe", "analyze", "summarize", "detail", "list", "display", "examine", "review", "inspect", "explore", "discover",
+            "find", "search", "look", "see", "check", "locate", "identify", "determine", "figure", "understand", "comprehend", "clarify", "elaborate",
+            "run", "execute", "build", "create", "make", "develop", "design", "implement", "write", "read", "open", "load", "save", "export", "import",
+            "generate", "process", "handle", "manage", "control", "operate", "use", "work", "function", "perform", "accomplish", "achieve", "complete",
+            
+            # Code/tech terms (obviously need code analysis)
+            "code", "file", "function", "class", "method", "module", "component", "structure", "architecture", "framework", "library", "package",
+            "implementation", "logic", "algorithm", "workflow", "process", "system", "program", "software", "application", "app", "tool", "script",
+            "api", "interface", "service", "client", "server", "database", "config", "configuration", "settings", "environment", "deployment",
+            
+            # Project/file terms (need to read actual files)
+            "project", "codebase", "repository", "repo", "source", "src", "directory", "folder", "path", "location", "workspace", "solution",
+            "main", "core", "base", "root", "primary", "central", "key", "important", "critical", "essential", "significant", "major", "principal",
+            
+            # Common file/component names (always worth searching)
+            "orchestrator", "main", "index", "app", "core", "base", "config", "settings", "utils", "utilities", "tools", "helpers", "common",
+            "manager", "handler", "controller", "service", "provider", "client", "server", "model", "view", "component", "widget", "plugin",
+            "engine", "driver", "adapter", "factory", "builder", "parser", "validator", "processor", "generator", "loader", "exporter",
+            
+            # Analysis terms (definitely need content)
+            "analysis", "summary", "overview", "breakdown", "evaluation", "assessment", "comparison", "contrast", "difference", "similarity",
+            "purpose", "goal", "objective", "intention", "design", "pattern", "approach", "strategy", "methodology", "technique", "solution",
+            
+            # Quality/improvement terms (need to see current state)
+            "improve", "optimize", "enhance", "refactor", "restructure", "reorganize", "clean", "fix", "debug", "troubleshoot", "solve",
+            "performance", "efficiency", "speed", "memory", "resource", "scalability", "maintainability", "readability", "quality", "best",
+            
+            # Learning/understanding terms (need examples)
+            "learn", "teach", "tutorial", "guide", "example", "sample", "demo", "illustration", "demonstration", "walkthrough", "explanation",
+            "documentation", "docs", "readme", "help", "manual", "reference", "specification", "standard", "convention", "practice",
+            
+            # Any file extension (obviously a file reference)
+            ".py", ".js", ".ts", ".java", ".cpp", ".c", ".go", ".rs", ".rb", ".php", ".html", ".css", ".json", ".xml", ".yaml", ".yml", ".toml", ".ini", ".md", ".txt"
+        ]
+        
+        # 🔥 ULTRA-AGGRESSIVE TRIGGERS: Multiple ways to catch ANY request that could benefit from code analysis
+        trigger_conditions = [
+            # Keyword-based triggers
+            any(word in user_request_lower for word in maximum_nuclear_keywords),
+            
+            # Length-based triggers (longer requests likely need context)
+            len(user_input.split()) >= 2,  # Even 2+ words might need analysis
+            
+            # Pattern-based triggers
+            "?" in user_input,  # Any question
+            "." in user_input and len(user_input) > 10,  # Sentences likely need context
+            any(char.isupper() for char in user_input),  # CamelCase/constants
+            "_" in user_input or "-" in user_input,  # snake_case/kebab-case
+            
+            # Context-based triggers
+            len(user_input) > 15,  # Longer requests need more context
+            user_input.count(" ") >= 1,  # Multi-word requests
+            
+            # Catch-all: if we have search+file tools available, USE THEM!
+            ("search" in tools_needed and "file" in tools_needed)
+        ]
+        
+        # NUCLEAR DECISION: If ANY trigger condition is met, GO NUCLEAR!
+        should_add_file_collection = any(trigger_conditions)
+        
+        # Extra safety net: if we somehow missed something, still go nuclear for complex requests
+        if not should_add_file_collection and len(user_input.strip()) > 5:
+            should_add_file_collection = True
+            debug_print("🚀 SAFETY NET NUCLEAR: Triggered for any non-trivial request")
+        
+        should_add_summary = should_add_file_collection
         
         if should_add_file_collection:
             debug_print("🔥 FULL NUCLEAR MODE: Adding multiple aggressive search and file collection steps")
@@ -828,14 +935,11 @@ CRITICAL INSTRUCTIONS:
         return plan
     
     def _brainstorm_filename_keywords(self, user_input: str) -> str:
-        """Brainstorm filename-specific keywords for aggressive file discovery"""
+        """Brainstorm filename-specific keywords for file discovery - GENERALIZED approach"""
         user_lower = user_input.lower()
         
-        # Since search tool doesn't support OR, pick the most likely single keyword
-        # Core filenames that are always important, prioritized
-        priority_keywords = ["orchestrator", "main", "core", "app", "config"]
-        
-        # Context-specific keyword selection
+        # GENERALIZED: Extract the most relevant keyword from user input
+        # Context-specific keyword selection without hardcoded paths
         if any(word in user_lower for word in ["orchestrator", "agent"]):
             return "orchestrator"
         elif any(word in user_lower for word in ["main", "entry", "primary"]):
@@ -849,9 +953,13 @@ CRITICAL INSTRUCTIONS:
         elif any(word in user_lower for word in ["tools", "utilities"]):
             return "tool"
         elif any(word in user_lower for word in ["learning", "ai", "model"]):
-            return "learning"
+            return "learning" 
+        elif any(word in user_lower for word in ["planner", "plan", "task"]):
+            return "planner"
+        elif any(word in user_lower for word in ["provider", "llm"]):
+            return "provider"
         else:
-            # Default to most important - orchestrator for this project
+            # Default to a common important filename
             return "orchestrator"
     
     def _brainstorm_function_keywords(self, user_input: str) -> str:
@@ -2060,8 +2168,41 @@ Set needs_clarification to true when:
                 unique_paths.append(path)
                 seen.add(path)
         
+        # AGGRESSIVE SOURCE FILE PRIORITY: Heavily favor actual source files
+        def source_file_priority(file_path):
+            path_lower = file_path.lower()
+            # Higher priority (lower number) = better
+            
+            # SUPER HIGH PRIORITY: Key source files
+            if 'src/core/orchestrator.py' in path_lower:
+                return -10  # HIGHEST priority for main orchestrator
+            elif 'src/main.py' in path_lower:
+                return -9   # Very high for main entry
+            elif 'src/core/' in path_lower and not ('test' in path_lower):
+                return -5   # High priority for core source files
+            elif '/src/' in path_lower and not ('test' in path_lower):
+                return 0    # Good priority for other source files
+            
+            # LOW PRIORITY: Test and example files
+            elif '/test' in path_lower or 'test_' in path_lower or '/tests/' in path_lower:
+                return 10   # Very low priority for test files
+            elif 'example' in path_lower:
+                return 8    # Low priority for example files
+            
+            # MEDIUM PRIORITY: Other files
+            else:
+                return 5    # Medium priority for everything else
+        
+        # Sort by priority, then take top N
+        prioritized_paths = sorted(unique_paths, key=source_file_priority)
+        
+        debug_print(f"File priority sorting: found {len(prioritized_paths)} unique files")
+        for i, path in enumerate(prioritized_paths[:5]):  # Show top 5 for debugging
+            priority = source_file_priority(path)
+            debug_print(f"  {i+1}. Priority {priority}: {path}")
+        
         # Return top N results
-        return unique_paths[:limit] if unique_paths else None
+        return prioritized_paths[:limit] if prioritized_paths else None
 
     def _get_latest_search_results(self, plan: TaskPlan, limit: int = 5) -> Optional[List[str]]:
         """Get the top N search results from the most recent search"""
