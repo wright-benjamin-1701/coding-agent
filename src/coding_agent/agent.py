@@ -31,6 +31,7 @@ class CodingAgent:
         self.tool_registry = ToolRegistry()
         self.rag_db = RAGDatabase(self.config.database.db_path)
         self.file_indexer = FileIndexer(
+            root_path=".",
             index_file=self.config.indexer.index_file
         )
         
@@ -85,7 +86,10 @@ class CodingAgent:
             plan = self.orchestrator.generate_plan(context)
             
             if not plan.actions:
-                return "No actions generated for this request."
+                if not self.model_provider.is_available():
+                    return "❌ Model provider (Ollama) is not available. Please:\n1. Install and start Ollama\n2. Pull a model: 'ollama pull llama2'\n3. Verify it's running: 'ollama list'"
+                else:
+                    return "❌ No actions could be generated for this request. Try rephrasing or check if the model is responding properly."
             
             # Show plan to user
             print(f"\n📋 Plan ({len(plan.actions)} actions):")
@@ -114,7 +118,10 @@ class CodingAgent:
             return summary
             
         except Exception as e:
+            import traceback
             error_msg = f"Error processing request: {str(e)}"
+            if self.config.debug:
+                print(f"Full traceback: {traceback.format_exc()}")
             print(f"❌ {error_msg}")
             return error_msg
     
@@ -153,7 +160,8 @@ class CodingAgent:
             user_prompt=user_prompt,
             current_commit=current_commit,
             modified_files=modified_files,
-            recent_summaries=recent_summaries
+            recent_summaries=recent_summaries,
+            debug=self.config.debug
         )
     
     def _generate_summary(self, user_prompt: str, results: List) -> str:

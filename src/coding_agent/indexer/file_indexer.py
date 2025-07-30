@@ -16,7 +16,11 @@ class IndexEntry:
         self.path = path
         self.content_hash = content_hash
         self.symbols = symbols or []
-        self.last_updated = os.path.getmtime(path)
+        try:
+            self.last_updated = os.path.getmtime(path)
+        except (OSError, TypeError):
+            # Handle case where path doesn't exist or is invalid
+            self.last_updated = 0
 
 
 class FileIndexer:
@@ -101,7 +105,7 @@ class FileIndexer:
         
         return symbols
     
-    def index_file(self, file_path: Path) -> bool:
+    def index_file_path(self, file_path: Path) -> bool:
         """Index a single file. Returns True if file was updated."""
         if self._should_ignore(file_path) or not file_path.is_file():
             return False
@@ -129,7 +133,7 @@ class FileIndexer:
         updated_files = []
         
         for file_path in self.root_path.rglob('*'):
-            if file_path.is_file() and self.index_file(file_path):
+            if file_path.is_file() and self.index_file_path(file_path):
                 updated_files.append(str(file_path.relative_to(self.root_path)))
         
         self._save_index()
@@ -138,7 +142,7 @@ class FileIndexer:
     def update_file(self, file_path: str):
         """Update index for a specific file."""
         path = self.root_path / file_path
-        if self.index_file(path):
+        if self.index_file_path(path):
             self._save_index()
     
     def remove_file(self, file_path: str):

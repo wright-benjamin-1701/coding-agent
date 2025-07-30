@@ -22,22 +22,29 @@ Recent context:
 
 User request: {user_prompt}
 
-Generate a JSON plan with actions to complete this request. Each action should be either:
-1. {"type": "tool_use", "tool_name": "name", "parameters": {...}}
-2. {"type": "confirmation", "message": "...", "destructive": true}
+Generate a JSON plan with actions to complete this request. Return a JSON object with an "actions" array.
 
-Return only the JSON plan, no other text."""
+Example format:
+{
+  "actions": [
+    {"type": "tool_use", "tool_name": "git_status", "parameters": {}},
+    {"type": "confirmation", "message": "Continue?", "destructive": false}
+  ]
+}
+
+Return ONLY the JSON object, no other text or thinking."""
     
     def build_prompt(self, context: Context, available_tools: Dict[str, Any]) -> str:
         """Build the complete prompt with context injection."""
         tools_description = self._format_tools(available_tools)
         context_description = self._format_context(context)
         
-        return self.system_template.format(
-            tools=tools_description,
-            context=context_description,
-            user_prompt=context.user_prompt
-        )
+        # Use string replacement instead of .format() to avoid issues with braces in tool descriptions
+        result = self.system_template
+        result = result.replace("{tools}", tools_description)
+        result = result.replace("{context}", context_description) 
+        result = result.replace("{user_prompt}", context.user_prompt)
+        return result
     
     def _format_tools(self, tools: Dict[str, Any]) -> str:
         """Format available tools for the prompt."""

@@ -6,3 +6,6 @@ config.yaml
 sessions/
 *__pycache__/
 .env/
+*.db
+config.json
+*index.json

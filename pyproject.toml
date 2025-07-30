@@ -9,16 +9,14 @@ description = "A thin coding agent with RAG and tool execution"
 authors = [{name = "Benjamin Wright"}]
 requires-python = ">=3.9"
 dependencies = [
-    "sqlite3",
     "requests",
-    "watchdog",
-    "click",
+    "watchdog", 
     "pydantic",
     "gitpython"
 ]
 
 [project.scripts]
-coding-agent = "coding_agent.cli:main"
+coding-agent = "coding_agent.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

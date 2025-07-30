@@ -28,6 +28,7 @@ class PlanOrchestrator:
         
         # Step 3: Combine and return
         all_actions = pre_actions + llm_actions
+        
         return Plan(actions=all_actions)
     
     def _get_pre_actions(self, context: Context) -> List[Union[ToolAction, ConfirmationAction]]:
@@ -55,6 +56,11 @@ class PlanOrchestrator:
     
     def _generate_llm_plan(self, context: Context) -> List[Union[ToolAction, ConfirmationAction]]:
         """Generate plan using LLM."""
+        # Check if model provider is available first
+        if not self.model_provider.is_available():
+            print("⚠️  Model provider not available")
+            return []
+        
         prompt = self.prompt_manager.build_prompt(
             context, 
             self.tool_registry.get_schemas()
@@ -62,12 +68,33 @@ class PlanOrchestrator:
         
         response = self.model_provider.generate(prompt)
         
-        # Parse JSON from response
-        plan_json = self._extract_json(response.content)
-        if not plan_json:
+        # Check if there was an error in the response
+        if response.metadata and "error" in response.metadata:
+            print(f"⚠️  Model error: {response.metadata['error']}")
             return []
         
-        return self._parse_actions(plan_json.get("actions", []))
+        # Check if response is empty
+        if not response.content.strip():
+            print("⚠️  Empty response from model")
+            self._debug_output(context, prompt, response)
+            return []
+        
+        # Parse JSON from response
+        plan_json = self._extract_json(response.content)
+        
+        if not plan_json:
+            print(f"⚠️  Could not parse JSON from model response")
+            self._debug_output(context, prompt, response)
+            return []
+        
+        actions = self._parse_actions(plan_json.get("actions", []))
+        
+        # Show debug info if no actions generated
+        if not actions:
+            print("⚠️  No actions generated from valid JSON")
+            self._debug_output(context, prompt, response)
+        
+        return actions
     
     def _extract_json(self, text: str) -> Dict[str, Any]:
         """Extract the largest JSON object from model response."""
@@ -103,18 +130,47 @@ class PlanOrchestrator:
         """Parse actions from JSON data."""
         actions = []
         
-        for action_data in actions_data:
-            action_type = action_data.get("type")
-            
-            if action_type == "tool_use":
-                actions.append(ToolAction(
-                    tool_name=action_data.get("tool_name", ""),
-                    parameters=action_data.get("parameters", {})
-                ))
-            elif action_type == "confirmation":
-                actions.append(ConfirmationAction(
-                    message=action_data.get("message", ""),
-                    destructive=action_data.get("destructive", True)
-                ))
+        if not isinstance(actions_data, list):
+            print(f"Warning: Expected list of actions, got: {type(actions_data)}")
+            return actions
+        
+        for i, action_data in enumerate(actions_data):
+            try:
+                if not isinstance(action_data, dict):
+                    print(f"Warning: Action {i} is not a dict: {action_data}")
+                    continue
+                
+                action_type = action_data.get("type")
+                
+                if action_type == "tool_use":
+                    actions.append(ToolAction(
+                        tool_name=action_data.get("tool_name", ""),
+                        parameters=action_data.get("parameters", {})
+                    ))
+                elif action_type == "confirmation":
+                    actions.append(ConfirmationAction(
+                        message=action_data.get("message", ""),
+                        destructive=action_data.get("destructive", True)
+                    ))
+                else:
+                    print(f"Warning: Unknown action type: {action_type}")
+            except Exception as e:
+                print(f"Error parsing action {i}: {e}")
+                continue
         
         return actions
+    
+    def _debug_output(self, context: Context, prompt: str, response):
+        """Show debug information when no actions can be generated."""
+        if context.debug:
+            print("\n" + "="*60)
+            print("🐛 DEBUG MODE - FULL PROMPT AND RESPONSE")
+            print("="*60)
+            print("\n📝 Full Prompt:")
+            print("-" * 40)
+            print(prompt)
+            print("\n🤖 Model Response:")
+            print("-" * 40)
+            print(f"Content: {response.content}")
+            print(f"Metadata: {response.metadata}")
+            print("="*60 + "\n")

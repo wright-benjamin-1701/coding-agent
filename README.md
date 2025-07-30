@@ -4,12 +4,14 @@ A thin, extensible coding agent with RAG (Retrieval-Augmented Generation) and to
 
 ## Features
 
+- **Interactive Text Interface**: Conversational Python program (no complex CLI)
 - **Model Provider Abstraction**: LLM-agnostic with built-in Ollama support
 - **RAG Database**: Context storage with SQLite for session history and file caching
 - **Tool Registry**: Extensible tool system with JSON schema validation
 - **Plan Orchestrator**: Hybrid hardcoded + LLM plan generation
 - **Plan Executor**: Tool execution loop with confirmation for destructive actions
 - **File Indexing**: Automatic codebase indexing with change watching
+- **Configuration Management**: Environment variables, config files, and interactive setup
 - **Low Complexity**: Clean architecture with separated concerns
 
 ## Installation
@@ -26,19 +28,26 @@ pip install -e .
 
 ## Quick Start
 
-1. Initialize the agent:
+1. Run the agent:
+
 ```bash
-coding-agent init
+python run.py
 ```
 
-2. Run interactively:
+Or if installed:
+
 ```bash
-coding-agent run
+coding-agent
 ```
 
-3. Run with a single prompt:
-```bash
-coding-agent run "add error handling to the main function"
+2. First run will guide you through configuration setup
+
+3. Then interact naturally:
+
+```
+🤖 > add error handling to the main function
+🤖 > find all TODO comments  
+🤖 > run the tests
 ```
 
 ## Architecture
@@ -74,11 +83,13 @@ The agent supports flexible configuration through config files, environment vari
 ### Configuration File
 
 Create a configuration file:
+
 ```bash
 coding-agent config --model codellama:7b
 ```
 
 Or copy the example:
+
 ```bash
 cp example_config.json .coding_agent_config.json
 ```
@@ -108,31 +119,55 @@ export CODING_AGENT_WATCH_ENABLED="true"
 export CODING_AGENT_DEBUG="true"
 ```
 
-### CLI Usage
+## Interactive Commands
 
-```bash
-# Use different model
-coding-agent --model codellama:7b run
+Once running, you can use these commands:
 
-# Use custom Ollama instance
-coding-agent --base-url http://192.168.1.100:11434 run
-
-# Use custom config file
-coding-agent --config my-config.json run
-
-# Enable debug mode
-coding-agent --debug run
+```
+🤖 > help     - Show available commands
+🤖 > status   - Show agent status and recent sessions  
+🤖 > config   - Show current configuration
+🤖 > tools    - List available tools
+🤖 > clear    - Clear screen
+🤖 > quit     - Exit program
 ```
 
-## CLI Commands
+**Or just type your coding requests naturally:**
 
-- `coding-agent init` - Initialize agent and build file index
-- `coding-agent run [PROMPT]` - Run agent (interactive if no prompt)
-- `coding-agent status` - Show agent status and recent sessions
-- `coding-agent tools` - List available tools and descriptions
-- `coding-agent config` - Create or update configuration
-- `coding-agent config-show` - Show current configuration
-- `coding-agent config-reset` - Reset configuration to defaults
+```
+🤖 > add error handling to main.py
+🤖 > find functions that use the database
+🤖 > refactor the User class
+🤖 > run the unit tests
+🤖 > create a README for this project
+```
+
+## User Experience
+
+The agent provides a clean, conversational interface:
+
+1. **First Time Setup**: Guided configuration with smart defaults
+2. **Natural Language**: No complex command syntax - just describe what you need
+3. **Visual Feedback**: Clear status indicators and formatted output
+4. **Context Awareness**: Remembers recent actions and modified files
+5. **Safety First**: Asks for confirmation before destructive operations
+6. **Extensible**: Easy to add new tools and capabilities
+
+Example session:
+```
+🤖 > status
+✅ Provider: ollama (codellama:7b)  
+📚 Recent: Fixed error handling in main.py
+
+🤖 > find all functions that handle file uploads
+🔄 Processing request...
+📋 Plan: Search for upload-related functions → Read relevant files
+✅ Found 3 functions: upload_file(), process_upload(), validate_file()
+
+🤖 > add logging to those functions
+⚠️  This will modify 2 files. Continue? (y/N): y
+✅ Added logging to upload functions
+```
 
 ## Design Principles
 
@@ -153,6 +188,7 @@ coding-agent --debug run
 ## Database Schema
 
 The agent maintains:
+
 - **Sessions**: User prompts, summaries, and execution logs
 - **File Cache**: Content and summaries by commit hash
 
@@ -161,6 +197,7 @@ Files are automatically cached and indexed for fast retrieval.
 ## Development
 
 The codebase prioritizes:
+
 - Low cyclomatic complexity
 - Clear interfaces
 - Testable components

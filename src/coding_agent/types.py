@@ -37,6 +37,7 @@ class Context(BaseModel):
     modified_files: List[str]
     current_commit: str
     user_prompt: str
+    debug: bool = False
 
 
 class ModelResponse(BaseModel):
