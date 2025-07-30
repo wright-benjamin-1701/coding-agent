@@ -24,20 +24,25 @@ User request: {user_prompt}
 
 Generate a JSON plan with actions to complete this request. Return a JSON object with an "actions" array.
 
+If previous actions have been executed, use their results to decide what to do next. You can generate follow-up actions based on the outputs from previous steps. 
+
+Consider whether this step should be final - if the task appears complete or nearly complete, focus on verification and cleanup actions rather than new exploration.
+
 Example format:
 {
   "actions": [
     {"type": "tool_use", "tool_name": "git_status", "parameters": {}},
+    {"type": "tool_use", "tool_name": "read_file", "parameters": {"file_path": "src/main.py"}},
     {"type": "confirmation", "message": "Continue?", "destructive": false}
   ]
 }
 
 Return ONLY the JSON object, no other text or thinking."""
     
-    def build_prompt(self, context: Context, available_tools: Dict[str, Any]) -> str:
+    def build_prompt(self, context: Context, available_tools: Dict[str, Any], previous_results: List = None) -> str:
         """Build the complete prompt with context injection."""
         tools_description = self._format_tools(available_tools)
-        context_description = self._format_context(context)
+        context_description = self._format_context(context, previous_results)
         
         # Use string replacement instead of .format() to avoid issues with braces in tool descriptions
         result = self.system_template
@@ -53,12 +58,35 @@ Return ONLY the JSON object, no other text or thinking."""
             formatted.append(f"- {name}: {schema.get('description', 'No description')}")
         return "\n".join(formatted)
     
-    def _format_context(self, context: Context) -> str:
+    def _format_context(self, context: Context, previous_results: List = None) -> str:
         """Format context information for the prompt."""
         parts = []
         
+        # Add previous results from current session if available
+        if previous_results:
+            parts.append(f"Previous actions executed in this session ({len(previous_results)} actions):")
+            
+            # Show recent results in detail, summarize older ones
+            recent_results = previous_results[-4:] if len(previous_results) > 4 else previous_results
+            if len(previous_results) > 4:
+                older_count = len(previous_results) - 4
+                successful_older = sum(1 for r in previous_results[:-4] if hasattr(r, 'success') and r.success)
+                parts.append(f"- (Earlier: {successful_older}/{older_count} actions succeeded)")
+            
+            for i, result in enumerate(recent_results, len(previous_results) - len(recent_results) + 1):
+                action_desc = getattr(result, 'action_description', f'Action {i}')
+                if hasattr(result, 'success') and result.success:
+                    status = "✅"
+                    output = str(result.output)[:200] + "..." if result.output and len(str(result.output)) > 200 else result.output or "No output"
+                    parts.append(f"- {status} {action_desc}: {output}")
+                else:
+                    status = "❌" 
+                    error = getattr(result, 'error', 'Unknown error')
+                    parts.append(f"- {status} {action_desc}: {error}")
+            parts.append("")  # Add blank line
+        
         if context.recent_summaries:
-            parts.append("Recent actions:")
+            parts.append("Recent actions from previous sessions:")
             for summary in context.recent_summaries[-5:]:  # Last 5 summaries
                 parts.append(f"- {summary}")
         

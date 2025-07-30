@@ -22,14 +22,24 @@ class ConfirmationAction(BaseModel):
     destructive: bool = True
 
 
+class PlanMetadata(BaseModel):
+    step_number: int = 1
+    is_final: bool = False
+    confidence: float = 1.0
+    reasoning: Optional[str] = None
+    expected_follow_up: bool = True
+
+
 class Plan(BaseModel):
     actions: List[Union[ToolAction, ConfirmationAction]]
+    metadata: Optional[PlanMetadata] = None
 
 
 class ToolResult(BaseModel):
     success: bool
     output: Any
     error: Optional[str] = None
+    action_description: Optional[str] = None
 
 
 class Context(BaseModel):

@@ -24,13 +24,15 @@ class PlanExecutor:
                     results.append(ToolResult(
                         success=False, 
                         output=None, 
-                        error="User cancelled action"
+                        error="User cancelled action",
+                        action_description=f"Confirmation: {action.message}"
                     ))
                     break
                 else:
                     results.append(ToolResult(
                         success=True, 
-                        output="Confirmed"
+                        output="Confirmed",
+                        action_description=f"Confirmation: {action.message}"
                     ))
             
             elif isinstance(action, ToolAction):
@@ -54,12 +56,17 @@ class PlanExecutor:
         """Execute a single tool action."""
         try:
             tool = self.tool_registry.get_tool(action.tool_name)
-            return tool.execute(**action.parameters)
+            result = tool.execute(**action.parameters)
+            
+            # Add action description to result
+            result.action_description = f"{action.tool_name}({action.parameters})"
+            return result
         except Exception as e:
             return ToolResult(
                 success=False,
                 output=None,
-                error=f"Tool execution failed: {str(e)}"
+                error=f"Tool execution failed: {str(e)}",
+                action_description=f"{action.tool_name}({action.parameters})"
             )
     
     def _request_confirmation(self, action: ConfirmationAction) -> bool:

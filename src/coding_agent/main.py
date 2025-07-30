@@ -37,6 +37,7 @@ class CodingAgentUI:
         try:
             # Load configuration
             self.config_manager = ConfigManager()
+            print(f"📄 Loading config from: {self.config_manager.config_path}")
             
             # Check if config exists, if not create one
             if not Path(self.config_manager.config_path).exists():
@@ -44,8 +45,11 @@ class CodingAgentUI:
                 if not self.setup_initial_config():
                     return False
             
-            # Create agent with the same config manager
+            # Create agent with the same config manager and pass it directly
             self.agent = CodingAgent(config_path=str(self.config_manager.config_path))
+            # Share the same config manager instance to avoid reload
+            self.agent.config_manager = self.config_manager
+            self.agent.config = self.config_manager.load_config()
             
             # Initialize agent
             print("🚀 Initializing agent...")
@@ -228,3 +232,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    

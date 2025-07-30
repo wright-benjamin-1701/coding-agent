@@ -11,6 +11,7 @@ from .tools.file_tools import ReadFileTool, WriteFileTool, SearchFilesTool
 from .tools.git_tools import GitStatusTool, GitDiffTool, GitCommitHashTool
 from .tools.brainstorm_tool import BrainstormSearchTermsTool
 from .tools.test_tools import RunTestsTool, LintCodeTool
+from .tools.analysis_tools import SummarizeCodeTool, AnalyzeCodeTool
 from .orchestrator import PlanOrchestrator
 from .executor import PlanExecutor
 from .database.rag_db import RAGDatabase
@@ -74,37 +75,79 @@ class CodingAgent:
         # Testing tools
         self.tool_registry.register(RunTestsTool())
         self.tool_registry.register(LintCodeTool())
+        
+        # Analysis tools
+        self.tool_registry.register(SummarizeCodeTool())
+        self.tool_registry.register(AnalyzeCodeTool())
     
     def process_request(self, user_prompt: str) -> str:
-        """Process a user request and return the result."""
+        """Process a user request with multi-step planning and execution."""
         try:
             # Build context
             context = self._build_context(user_prompt)
             
-            # Generate plan
-            print("🔄 Generating execution plan...")
-            plan = self.orchestrator.generate_plan(context)
+            # Multi-step execution loop with intelligent stopping
+            all_results = []
+            step = 1
+            max_steps = self._calculate_max_steps(context)
             
-            if not plan.actions:
-                if not self.model_provider.is_available():
-                    return "❌ Model provider (Ollama) is not available. Please:\n1. Install and start Ollama\n2. Pull a model: 'ollama pull llama2'\n3. Verify it's running: 'ollama list'"
-                else:
-                    return "❌ No actions could be generated for this request. Try rephrasing or check if the model is responding properly."
+            while step <= max_steps:
+                print(f"🔄 Generating execution plan (step {step})...")
+                
+                # Generate plan with step information
+                filtered_results = self._filter_results_for_context(all_results, step)
+                plan = self.orchestrator.generate_plan(context, filtered_results, step)
+                
+                # Handle empty plans
+                if not plan.actions:
+                    if step == 1 and not self.model_provider.is_available():
+                        return "❌ Model provider (Ollama) is not available. Please:\n1. Install and start Ollama\n2. Pull a model: 'ollama pull llama2'\n3. Verify it's running: 'ollama list'"
+                    elif step == 1:
+                        return "❌ No actions could be generated for this request. Try rephrasing or check if the model is responding properly."
+                    else:
+                        print("✅ No additional actions needed, task appears complete.")
+                        break
+                
+                # Show plan with metadata to user
+                self._display_plan(plan, step)
+                
+                # Check intelligent stopping conditions
+                if plan.metadata and plan.metadata.is_final:
+                    print(f"🎯 Plan indicates final step: {plan.metadata.reasoning}")
+                
+                # Execute plan
+                print(f"\n⚡ Executing plan step {step}...")
+                results = self.executor.execute_plan(plan)
+                all_results.extend(results)
+                
+                # Check for execution failures
+                if results and not results[-1].success:
+                    print("❌ Execution stopped due to failure or cancellation")
+                    break
+                
+                # Intelligent stopping based on plan metadata
+                if plan.metadata and plan.metadata.is_final:
+                    print("✅ Task marked as complete by plan analysis")
+                    break
+                
+                # Traditional stopping conditions
+                tool_actions = [a for a in plan.actions if hasattr(a, 'tool_name')]
+                if not tool_actions:
+                    print("✅ Plan completed (no more tool actions)")
+                    break
+                
+                # Check if we should stop based on follow-up expectations
+                if plan.metadata and not plan.metadata.expected_follow_up and step > 2:
+                    print(f"✅ No follow-up expected (confidence: {plan.metadata.confidence:.2f})")
+                    break
+                
+                step += 1
             
-            # Show plan to user
-            print(f"\n📋 Plan ({len(plan.actions)} actions):")
-            for i, action in enumerate(plan.actions, 1):
-                if hasattr(action, 'tool_name'):
-                    print(f"  {i}. {action.tool_name}: {action.parameters}")
-                else:
-                    print(f"  {i}. Confirmation: {action.message}")
-            
-            # Execute plan
-            print("\n⚡ Executing plan...")
-            results = self.executor.execute_plan(plan)
+            if step > max_steps:
+                print(f"⚠️  Maximum steps ({max_steps}) reached, stopping execution")
             
             # Generate summary
-            summary = self._generate_summary(user_prompt, results)
+            summary = self._generate_summary(user_prompt, all_results)
             
             # Store session
             self.rag_db.store_session(
@@ -163,6 +206,61 @@ class CodingAgent:
             recent_summaries=recent_summaries,
             debug=self.config.debug
         )
+    
+    def _calculate_max_steps(self, context: Context) -> int:
+        """Calculate adaptive maximum steps based on task complexity."""
+        base_steps = 5
+        
+        # Increase steps for complex requests
+        complexity_keywords = ['refactor', 'implement', 'create', 'build', 'design', 'test', 'debug']
+        if any(keyword in context.user_prompt.lower() for keyword in complexity_keywords):
+            base_steps += 2
+        
+        # Increase steps if many files are modified
+        if len(context.modified_files) > 5:
+            base_steps += 1
+        
+        # Reduce steps for simple requests
+        simple_keywords = ['read', 'show', 'display', 'list', 'status']
+        if any(keyword in context.user_prompt.lower() for keyword in simple_keywords):
+            base_steps = max(3, base_steps - 2)
+        
+        return min(10, max(3, base_steps))  # Between 3 and 10 steps
+    
+    def _filter_results_for_context(self, all_results: List, current_step: int) -> List:
+        """Filter results to keep only the most relevant ones for context."""
+        if not all_results:
+            return None
+        
+        # Keep all results for early steps
+        if current_step <= 3:
+            return all_results
+        
+        # For later steps, keep more recent results and important ones
+        recent_results = all_results[-6:]  # Last 6 results
+        
+        # Also keep any results that had errors (they might be relevant)
+        error_results = [r for r in all_results[:-6] if hasattr(r, 'success') and not r.success]
+        
+        # Combine and deduplicate
+        filtered = recent_results + error_results
+        return filtered if filtered else all_results
+    
+    def _display_plan(self, plan, step: int):
+        """Display plan with metadata information."""
+        print(f"\n📋 Plan Step {step} ({len(plan.actions)} actions)")
+        
+        if plan.metadata:
+            confidence_emoji = "🟢" if plan.metadata.confidence > 0.8 else "🟡" if plan.metadata.confidence > 0.5 else "🔴"
+            print(f"   {confidence_emoji} Confidence: {plan.metadata.confidence:.1f} | Final: {plan.metadata.is_final} | Follow-up: {plan.metadata.expected_follow_up}")
+            if plan.metadata.reasoning:
+                print(f"   💭 {plan.metadata.reasoning}")
+        
+        for i, action in enumerate(plan.actions, 1):
+            if hasattr(action, 'tool_name'):
+                print(f"  {i}. {action.tool_name}: {action.parameters}")
+            else:
+                print(f"  {i}. Confirmation: {action.message}")
     
     def _generate_summary(self, user_prompt: str, results: List) -> str:
         """Generate a 1-2 sentence summary of what was accomplished."""

@@ -47,10 +47,15 @@ class ConfigManager:
     
     def _get_default_config_path(self) -> str:
         """Get default configuration file path."""
-        # Try local config first, then user config directory
-        local_config = Path(".coding_agent_config.json")
-        if local_config.exists():
-            return str(local_config)
+        # Try local config files first
+        local_configs = [
+            Path("config.json"),
+            Path(".coding_agent_config.json")
+        ]
+        
+        for local_config in local_configs:
+            if local_config.exists():
+                return str(local_config)
         
         # User config directory
         config_dir = Path.home() / ".config" / "coding-agent"
