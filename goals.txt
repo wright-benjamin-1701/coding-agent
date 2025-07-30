@@ -4,12 +4,13 @@ Requirements:
 1. This should be agnostic to LLM provider, but out of the box support for ollama provider.
 2. We are optimizing for small models with no memory, so we have to implement a RAG-like solution for providing it context each query. Ideally, each user prompt will list files modified, remember the prompt, store the current git commit, and generate a 1-2 sentence summary of changes, and store these actions in a(n SQL) database. The last N summaries will be injected into each prompt.
 3. We need a prompt management layer. And I want to keep the number of hardcoded system prompt templates to a minimum. Ideally 1. But, at the least, we need a system to inject context each user prompt. 
-4. For each user prompt, develop a plan of action based on system prompt template that lists available tools and recent context with the user prompt. This plan is a list of JSON objects representing tool use or other actions. This is generated in one call before plan execution.
+4. For each user prompt, develop a plan of action based on system prompt template that lists available tools and recent context with the user prompt. This plan is a list of JSON objects representing tool use or other actions. This is generated in one call before plan execution, and is done in part via hardcoding and in part via the LLM.
 5. Destructive tools require confirmation before use.
 6. Ability to modify generated plans by inserting automatic pre-actions, such as brainstorming search terms or scanning relevant files before proceeding with core actions.
 
 Utilities:
 1. Utility to parse the largest JSON object from the model response and strip any "thinking" tags or excess natural language.
+2. Add a debug layer that gives us access to full prompts and responses.
 
 Required tools:
 1. It should be able to read, write, and search through files. 
@@ -24,6 +25,7 @@ Required tools:
 10. Search with ripgrep.
 11. Generate diffs (even if just git diff tool)
 12. Index the codebase for fast searching (this index is automatically built and updated when changes are made. Is it possible to build the index so changing a file doesn't require rebuilding the entire index?)
+13. It should be able to generate plans according to our JSON schema.
 
 Additional thoughts:
 1. tool_schema.json registry: Keep a single source of truth for tool names, inputs, and expected output shapes. Helps with prompting.

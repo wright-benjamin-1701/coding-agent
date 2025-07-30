@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coding-agent"
+version = "1.0.0"
+description = "A thin coding agent with RAG and tool execution"
+authors = [{name = "Benjamin Wright"}]
+requires-python = ">=3.9"
+dependencies = [
+    "sqlite3",
+    "requests",
+    "watchdog",
+    "click",
+    "pydantic",
+    "gitpython"
+]
+
+[project.scripts]
+coding-agent = "coding_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"

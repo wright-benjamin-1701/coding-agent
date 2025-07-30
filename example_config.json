@@ -1,0 +1,26 @@
+{
+  "model": {
+    "provider": "ollama",
+    "model": "llama2",
+    "base_url": "http://localhost:11434",
+    "temperature": 0.7,
+    "max_tokens": null
+  },
+  "database": {
+    "db_path": ".coding_agent.db",
+    "max_summaries": 10,
+    "cache_enabled": true
+  },
+  "indexer": {
+    "index_file": ".coding_agent_index.json",
+    "ignore_patterns": [
+      ".git",
+      "__pycache__",
+      "node_modules",
+      ".env",
+      "*.pyc"
+    ],
+    "watch_enabled": true
+  },
+  "debug": false
+}
