@@ -33,12 +33,17 @@ class ReadFileTool(Tool):
     def is_destructive(self) -> bool:
         return False
     
-    def execute(self, file_path: str) -> ToolResult:
+    def execute(self, **parameters) -> ToolResult:
         """Read a file."""
+        file_path = parameters.get("file_path")
+        
+        if not file_path:
+            return ToolResult(success=False, output=None, error="Missing file_path parameter")
+        
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            return ToolResult(success=True, output=content)
+            return ToolResult(success=True, output=content, action_description=f"Read {file_path}")
         except Exception as e:
             return ToolResult(success=False, output=None, error=str(e))
 
@@ -69,13 +74,23 @@ class WriteFileTool(Tool):
     def is_destructive(self) -> bool:
         return True
     
-    def execute(self, file_path: str, content: str) -> ToolResult:
+    def execute(self, **parameters) -> ToolResult:
         """Write to a file."""
+        file_path = parameters.get("file_path")
+        content = parameters.get("content")
+        
+        if not file_path or content is None:
+            return ToolResult(success=False, output=None, error="Missing file_path or content parameter")
+        
         try:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            # Only create directories if the file path contains a directory
+            dir_path = os.path.dirname(file_path)
+            if dir_path:
+                os.makedirs(dir_path, exist_ok=True)
+            
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(content)
-            return ToolResult(success=True, output=f"File written: {file_path}")
+            return ToolResult(success=True, output=f"File written: {file_path}", action_description=f"Wrote {file_path}")
         except Exception as e:
             return ToolResult(success=False, output=None, error=str(e))
 
@@ -107,14 +122,21 @@ class SearchFilesTool(Tool):
     def is_destructive(self) -> bool:
         return False
     
-    def execute(self, pattern: str, path: str = ".", file_type: str = None) -> ToolResult:
+    def execute(self, **parameters) -> ToolResult:
         """Search files with ripgrep."""
+        pattern = parameters.get("pattern")
+        path = parameters.get("path", ".")
+        file_type = parameters.get("file_type")
+        
+        if not pattern:
+            return ToolResult(success=False, output=None, error="Missing pattern parameter")
+        
         try:
             cmd = ["rg", pattern, path, "--json"]
             if file_type:
                 cmd.extend(["-t", file_type])
             
             result = subprocess.run(cmd, capture_output=True, text=True)
-            return ToolResult(success=True, output=result.stdout)
+            return ToolResult(success=True, output=result.stdout, action_description=f"Searched for '{pattern}' in {path}")
         except Exception as e:
             return ToolResult(success=False, output=None, error=str(e))
