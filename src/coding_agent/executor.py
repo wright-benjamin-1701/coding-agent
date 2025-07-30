@@ -3,13 +3,15 @@
 from typing import List, Dict, Any
 from .types import Plan, ToolAction, ConfirmationAction, ToolResult
 from .tools.registry import ToolRegistry
+from .config import AgentConfig
 
 
 class PlanExecutor:
     """Executes plans by running tools in sequence."""
     
-    def __init__(self, tool_registry: ToolRegistry):
+    def __init__(self, tool_registry: ToolRegistry, config: AgentConfig = None):
         self.tool_registry = tool_registry
+        self.config = config
         self.execution_log: List[Dict[str, Any]] = []
     
     def execute_plan(self, plan: Plan) -> List[ToolResult]:
@@ -39,6 +41,9 @@ class PlanExecutor:
                 # Execute tool action
                 result = self._execute_tool_action(action)
                 results.append(result)
+                
+                # Show tool output if configured
+                self._maybe_show_tool_output(action.tool_name, result)
                 
                 # Log execution
                 self.execution_log.append({
@@ -75,8 +80,25 @@ class PlanExecutor:
         if action.destructive:
             print("This action is destructive and cannot be undone.")
         
+        # Check for auto-continue setting
+        if self.config and self.config.execution.auto_continue:
+            print("Auto-continue enabled - proceeding automatically.")
+            return True
+        
         response = input("Continue? (y/N): ").strip().lower()
         return response in ['y', 'yes']
+    
+    def _maybe_show_tool_output(self, tool_name: str, result: ToolResult):
+        """Show tool output if configured to do so."""
+        if not self.config or not result.success:
+            return
+        
+        show_output_tools = self.config.execution.show_tool_output
+        if tool_name in show_output_tools and result.output:
+            print(f"\n📋 {tool_name} output:")
+            print("-" * 60)
+            print(result.output)
+            print("-" * 60)
     
     def _is_critical_tool(self, tool_name: str) -> bool:
         """Check if a tool failure should stop execution."""

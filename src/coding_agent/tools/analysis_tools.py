@@ -2,13 +2,17 @@
 
 import os
 import subprocess
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from .base import Tool
 from ..types import ToolResult
+from ..providers.base import ModelProvider
 
 
 class SummarizeCodeTool(Tool):
-    """Tool for generating plain text summaries of codebases or files."""
+    """Tool for generating LLM-powered summaries of codebases or files."""
+    
+    def __init__(self, model_provider: Optional[ModelProvider] = None):
+        self.model_provider = model_provider
     
     @property
     def name(self) -> str:
@@ -16,7 +20,7 @@ class SummarizeCodeTool(Tool):
     
     @property
     def description(self) -> str:
-        return "Analyze and summarize code structure, purpose, and key components. Outputs plain text summary."
+        return "Analyze and summarize code structure, purpose, and key components using LLM analysis. Outputs intelligent plain text summary."
     
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -45,281 +49,149 @@ class SummarizeCodeTool(Tool):
         focus = parameters.get("focus", "overview")
         
         try:
+            # Check if LLM is available
+            if not self.model_provider or not self.model_provider.is_available():
+                return ToolResult(success=False, output=None, error="LLM provider not available for intelligent code analysis")
+            
+            # Gather code content
             if target == "codebase":
-                output = self._summarize_codebase(focus)
+                content = self._gather_codebase_content()
             elif os.path.isfile(target):
-                output = self._summarize_file(target, focus)
+                content = self._gather_file_content(target)
             elif os.path.isdir(target):
-                output = self._summarize_directory(target, focus)
+                content = self._gather_directory_content(target)
             else:
                 return ToolResult(success=False, output=None, error=f"Target '{target}' not found or not accessible.")
             
-            return ToolResult(success=True, output=output, action_description=f"Summarized {target} with focus on {focus}")
+            # Generate LLM summary
+            prompt = self._build_summary_prompt(content, target, focus)
+            response = self.model_provider.generate(prompt)
+            
+            if not response.content.strip():
+                return ToolResult(success=False, output=None, error="LLM returned empty response")
+            
+            return ToolResult(success=True, output=response.content.strip(), action_description=f"LLM summarized {target} with focus on {focus}")
         except Exception as e:
             return ToolResult(success=False, output=None, error=f"Error summarizing {target}: {str(e)}")
     
-    def _summarize_codebase(self, focus: str) -> str:
-        """Generate a summary of the entire codebase."""
-        summary_parts = []
+    def _gather_codebase_content(self) -> str:
+        """Gather key codebase files for LLM analysis."""
+        content_parts = []
         
-        # Project overview
-        summary_parts.append("# Codebase Summary")
-        summary_parts.append("")
+        # Add project overview files
+        overview_files = ['README.md', 'package.json', 'requirements.txt', 'setup.py', 'Cargo.toml']
+        for file in overview_files:
+            if os.path.exists(file):
+                try:
+                    with open(file, 'r', encoding='utf-8') as f:
+                        content = f.read()[:2000]  # Limit size
+                        content_parts.append(f"=== {file} ===\n{content}\n")
+                except:
+                    continue
         
-        # Get project structure
-        structure = self._get_project_structure()
-        summary_parts.append("## Project Structure")
-        summary_parts.extend(structure)
-        summary_parts.append("")
+        # Add key source files (limit to prevent context overflow)
+        source_files = []
+        for root, dirs, files in os.walk('.'):
+            # Skip hidden and build directories
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['__pycache__', 'node_modules', 'target', 'build']]
+            
+            for file in files:
+                if file.endswith(('.py', '.js', '.ts', '.rs', '.go', '.java', '.cpp', '.h')):
+                    file_path = os.path.join(root, file)
+                    source_files.append(file_path)
         
-        # Analyze main components based on focus
-        if focus in ["overview", "architecture"]:
-            components = self._analyze_main_components()
-            summary_parts.append("## Main Components")
-            summary_parts.extend(components)
-            summary_parts.append("")
+        # Sort by relevance (main files first, then by name)
+        source_files.sort(key=lambda x: (
+            0 if 'main' in os.path.basename(x).lower() else
+            1 if 'app' in os.path.basename(x).lower() else
+            2 if 'index' in os.path.basename(x).lower() else 3,
+            x
+        ))
         
-        if focus in ["overview", "functionality"]:
-            functionality = self._analyze_functionality()
-            summary_parts.append("## Key Functionality")
-            summary_parts.extend(functionality)
-            summary_parts.append("")
+        # Add top source files (limit to prevent context overflow)
+        for file_path in source_files[:10]:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()[:1500]  # Limit size per file
+                    content_parts.append(f"=== {file_path} ===\n{content}\n")
+            except:
+                continue
         
-        if focus in ["overview", "dependencies"]:
-            deps = self._analyze_dependencies()
-            summary_parts.append("## Dependencies & Technologies")
-            summary_parts.extend(deps)
-            summary_parts.append("")
-        
-        return "\n".join(summary_parts)
+        return "\n".join(content_parts)
     
-    def _summarize_file(self, file_path: str, focus: str) -> str:
-        """Generate a summary of a specific file."""
+    def _gather_file_content(self, file_path: str) -> str:
+        """Gather content from a specific file for LLM analysis."""
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
+            return f"=== {file_path} ===\n{content}"
         except Exception as e:
-            return f"Error reading file {file_path}: {e}"
-        
-        summary_parts = []
-        summary_parts.append(f"# Summary of {file_path}")
-        summary_parts.append("")
-        
-        # Basic file info
-        lines = content.split('\n')
-        summary_parts.append(f"**File size:** {len(lines)} lines, {len(content)} characters")
-        summary_parts.append("")
-        
-        # Language-specific analysis
-        if file_path.endswith('.py'):
-            analysis = self._analyze_python_file(content, focus)
-            summary_parts.extend(analysis)
-        elif file_path.endswith(('.js', '.ts')):
-            analysis = self._analyze_javascript_file(content, focus)
-            summary_parts.extend(analysis)
-        else:
-            # Generic analysis
-            summary_parts.append("**Content Preview:**")
-            preview_lines = lines[:10]
-            for line in preview_lines:
-                summary_parts.append(f"    {line}")
-            if len(lines) > 10:
-                summary_parts.append("    ...")
-        
-        return "\n".join(summary_parts)
+            return f"=== {file_path} ===\nError reading file: {e}"
     
-    def _summarize_directory(self, dir_path: str, focus: str) -> str:
-        """Generate a summary of a directory and its contents."""
-        summary_parts = []
-        summary_parts.append(f"# Summary of {dir_path}/")
-        summary_parts.append("")
+    def _gather_directory_content(self, dir_path: str) -> str:
+        """Gather content from a directory for LLM analysis."""
+        content_parts = []
         
         try:
-            files = []
-            for root, dirs, filenames in os.walk(dir_path):
-                for filename in filenames:
-                    if not filename.startswith('.') and not filename.endswith('.pyc'):
-                        rel_path = os.path.relpath(os.path.join(root, filename), dir_path)
-                        files.append(rel_path)
+            # Gather relevant files from the directory
+            source_files = []
+            for root, dirs, files in os.walk(dir_path):
+                # Skip hidden and build directories
+                dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['__pycache__', 'node_modules', 'target', 'build']]
+                
+                for file in files:
+                    if file.endswith(('.py', '.js', '.ts', '.rs', '.go', '.java', '.cpp', '.h', '.md')):
+                        file_path = os.path.join(root, file)
+                        source_files.append(file_path)
             
-            summary_parts.append(f"**Directory contains {len(files)} files**")
-            summary_parts.append("")
-            
-            # Group by file type
-            file_types = {}
-            for file in files:
-                ext = os.path.splitext(file)[1] or 'no extension'
-                file_types.setdefault(ext, []).append(file)
-            
-            summary_parts.append("**File breakdown:**")
-            for ext, file_list in sorted(file_types.items()):
-                summary_parts.append(f"- {ext}: {len(file_list)} files")
-                if len(file_list) <= 5:
-                    for file in file_list:
-                        summary_parts.append(f"  - {file}")
-                else:
-                    for file in file_list[:3]:
-                        summary_parts.append(f"  - {file}")
-                    summary_parts.append(f"  - ... and {len(file_list) - 3} more")
+            # Add files up to a reasonable limit
+            for file_path in sorted(source_files)[:8]:
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()[:2000]  # Limit size per file
+                        content_parts.append(f"=== {file_path} ===\n{content}\n")
+                except:
+                    continue
             
         except Exception as e:
-            summary_parts.append(f"Error analyzing directory: {e}")
+            content_parts.append(f"Error reading directory {dir_path}: {e}")
         
-        return "\n".join(summary_parts)
+        return "\n".join(content_parts)
     
-    def _get_project_structure(self) -> List[str]:
-        """Get high-level project structure."""
-        structure = []
-        
-        # Look for common project files
-        key_files = ['README.md', 'setup.py', 'requirements.txt', 'package.json', 'Dockerfile', 'config.json']
-        found_files = [f for f in key_files if os.path.exists(f)]
-        
-        if found_files:
-            structure.append("**Key project files:**")
-            for file in found_files:
-                structure.append(f"- {file}")
-        
-        # Main directories
-        main_dirs = []
-        for item in os.listdir('.'):
-            if os.path.isdir(item) and not item.startswith('.') and item != '__pycache__':
-                main_dirs.append(item)
-        
-        if main_dirs:
-            structure.append("**Main directories:**")
-            for dir_name in sorted(main_dirs):
-                structure.append(f"- {dir_name}/")
-        
-        return structure
-    
-    def _analyze_main_components(self) -> List[str]:
-        """Analyze main code components."""
-        components = []
-        
-        # Look for Python modules in src/
-        if os.path.exists('src'):
-            for root, dirs, files in os.walk('src'):
-                for file in files:
-                    if file.endswith('.py') and file != '__init__.py':
-                        rel_path = os.path.relpath(os.path.join(root, file), 'src')
-                        components.append(f"- {rel_path.replace('.py', '').replace('/', '.')}")
-        
-        # Look for main entry points
-        entry_points = ['main.py', 'app.py', 'run.py', 'index.js', 'server.js']
-        for entry in entry_points:
-            if os.path.exists(entry):
-                components.append(f"- **{entry}** (entry point)")
-        
-        return components if components else ["- No clear component structure detected"]
-    
-    def _analyze_functionality(self) -> List[str]:
-        """Analyze key functionality by examining file names and structure."""
-        functionality = []
-        
-        # Look for functionality hints in directory/file names
-        func_indicators = {
-            'api': 'API/Web service functionality',
-            'database': 'Database operations',
-            'db': 'Database operations', 
-            'models': 'Data models/schemas',
-            'controllers': 'Request handling/routing',
-            'services': 'Business logic services',
-            'utils': 'Utility functions',
-            'helpers': 'Helper functions',
-            'auth': 'Authentication/authorization',
-            'config': 'Configuration management',
-            'tests': 'Testing framework',
-            'cli': 'Command-line interface',
-            'ui': 'User interface',
-            'tools': 'Development tools'
+    def _build_summary_prompt(self, content: str, target: str, focus: str) -> str:
+        """Build a prompt for LLM code summarization."""
+        focus_instructions = {
+            "overview": "Provide a comprehensive overview including purpose, structure, and key components.",
+            "architecture": "Focus on the architectural patterns, design decisions, and system structure.",
+            "functionality": "Emphasize what the code does, its main features, and user-facing functionality.",
+            "dependencies": "Highlight external dependencies, libraries used, and integration points."
         }
         
-        found_functionality = []
-        for root, dirs, files in os.walk('.'):
-            for item in dirs + files:
-                item_lower = item.lower().replace('.py', '').replace('.js', '')
-                for indicator, description in func_indicators.items():
-                    if indicator in item_lower and description not in found_functionality:
-                        found_functionality.append(description)
+        focus_instruction = focus_instructions.get(focus, focus_instructions["overview"])
         
-        return found_functionality if found_functionality else ["- Functionality not clearly identifiable from structure"]
-    
-    def _analyze_dependencies(self) -> List[str]:
-        """Analyze project dependencies."""
-        deps = []
-        
-        # Python dependencies
-        if os.path.exists('requirements.txt'):
-            try:
-                with open('requirements.txt', 'r') as f:
-                    python_deps = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-                deps.append(f"**Python packages:** {len(python_deps)} dependencies")
-                if python_deps:
-                    deps.extend([f"- {dep}" for dep in python_deps[:5]])
-                    if len(python_deps) > 5:
-                        deps.append(f"- ... and {len(python_deps) - 5} more")
-            except:
-                deps.append("**Python packages:** requirements.txt found but not readable")
-        
-        # Node.js dependencies
-        if os.path.exists('package.json'):
-            deps.append("**Node.js project** with package.json")
-        
-        # Docker
-        if os.path.exists('Dockerfile'):
-            deps.append("**Docker** containerization")
-        
-        return deps if deps else ["- No clear dependency files found"]
-    
-    def _analyze_python_file(self, content: str, focus: str) -> List[str]:
-        """Analyze a Python file's structure."""
-        analysis = []
-        lines = content.split('\n')
-        
-        # Count different elements
-        imports = [line for line in lines if line.strip().startswith(('import ', 'from '))]
-        classes = [line for line in lines if line.strip().startswith('class ')]
-        functions = [line for line in lines if line.strip().startswith('def ')]
-        
-        analysis.append("**Python file analysis:**")
-        analysis.append(f"- Imports: {len(imports)}")
-        analysis.append(f"- Classes: {len(classes)}")
-        analysis.append(f"- Functions: {len(functions)}")
-        analysis.append("")
-        
-        if focus in ["overview", "functionality"] and (classes or functions):
-            analysis.append("**Key components:**")
-            for cls in classes[:3]:
-                class_name = cls.strip().split()[1].split('(')[0].rstrip(':')
-                analysis.append(f"- Class: {class_name}")
-            for func in functions[:5]:
-                func_name = func.strip().split()[1].split('(')[0]
-                analysis.append(f"- Function: {func_name}")
-            
-            if len(classes) > 3 or len(functions) > 5:
-                analysis.append("- ...")
-        
-        return analysis
-    
-    def _analyze_javascript_file(self, content: str, focus: str) -> List[str]:
-        """Analyze a JavaScript/TypeScript file's structure."""
-        analysis = []
-        lines = content.split('\n')
-        
-        # Basic analysis
-        imports = [line for line in lines if 'import' in line or 'require(' in line]
-        functions = [line for line in lines if 'function' in line or '=>' in line]
-        
-        analysis.append("**JavaScript/TypeScript file analysis:**")
-        analysis.append(f"- Import statements: {len(imports)}")
-        analysis.append(f"- Functions/methods: {len(functions)}")
-        
-        return analysis
+        return f"""Please analyze the following code and provide a clear, well-structured summary.
+
+TARGET: {target}
+FOCUS: {focus_instruction}
+
+CODE CONTENT:
+{content}
+
+Please provide a markdown-formatted summary that includes:
+1. **Purpose & Overview** - What this code does and why it exists
+2. **Key Components** - Main files, classes, functions, or modules
+3. **Architecture & Structure** - How the code is organized and key patterns used
+4. **Technologies & Dependencies** - Languages, frameworks, and external dependencies
+5. **Notable Features** - Important functionality, algorithms, or design decisions
+
+Keep the summary concise but informative, suitable for developers who need to understand this codebase quickly."""
 
 
 class AnalyzeCodeTool(Tool):
-    """Tool for detailed code analysis and structure inspection."""
+    """Tool for detailed LLM-powered code analysis and structure inspection."""
+    
+    def __init__(self, model_provider: Optional[ModelProvider] = None):
+        self.model_provider = model_provider
     
     @property
     def name(self) -> str:
@@ -327,7 +199,7 @@ class AnalyzeCodeTool(Tool):
     
     @property
     def description(self) -> str:
-        return "Perform detailed code analysis including complexity, patterns, and potential issues. Outputs plain text analysis."
+        return "Perform detailed code analysis including complexity, patterns, and potential issues using LLM intelligence. Outputs comprehensive plain text analysis."
     
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -356,126 +228,98 @@ class AnalyzeCodeTool(Tool):
         analysis_type = parameters.get("analysis_type", "all")
         
         try:
+            # Check if LLM is available
+            if not self.model_provider or not self.model_provider.is_available():
+                return ToolResult(success=False, output=None, error="LLM provider not available for intelligent code analysis")
+            
+            # Check if target exists
             if not os.path.exists(target):
                 return ToolResult(success=False, output=None, error=f"Target '{target}' not found.")
             
-            analysis_parts = []
-            analysis_parts.append(f"# Code Analysis: {target}")
-            analysis_parts.append("")
-            
+            # Gather code content
             if os.path.isfile(target):
-                analysis_parts.extend(self._analyze_single_file(target, analysis_type))
+                content = self._gather_file_content(target)
             else:
-                analysis_parts.extend(self._analyze_directory(target, analysis_type))
+                content = self._gather_directory_content(target)
             
-            output = "\n".join(analysis_parts)
-            return ToolResult(success=True, output=output, action_description=f"Analyzed {target} ({analysis_type})")
+            # Generate LLM analysis
+            prompt = self._build_analysis_prompt(content, target, analysis_type)
+            response = self.model_provider.generate(prompt)
+            
+            if not response.content.strip():
+                return ToolResult(success=False, output=None, error="LLM returned empty response")
+            
+            return ToolResult(success=True, output=response.content.strip(), action_description=f"LLM analyzed {target} ({analysis_type})")
         except Exception as e:
             return ToolResult(success=False, output=None, error=f"Error analyzing {target}: {str(e)}")
     
-    def _analyze_single_file(self, file_path: str, analysis_type: str) -> List[str]:
-        """Analyze a single file."""
+    def _gather_file_content(self, file_path: str) -> str:
+        """Gather content from a specific file for LLM analysis."""
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
+            return f"=== {file_path} ===\n{content}"
         except Exception as e:
-            return [f"Error reading file: {e}"]
-        
-        analysis = []
-        lines = content.split('\n')
-        
-        # Basic metrics
-        if analysis_type in ["metrics", "all"]:
-            analysis.append("## Metrics")
-            analysis.append(f"- Lines of code: {len(lines)}")
-            analysis.append(f"- Characters: {len(content)}")
-            analysis.append(f"- Non-empty lines: {len([l for l in lines if l.strip()])}")
-            analysis.append("")
-        
-        # Python-specific analysis
-        if file_path.endswith('.py'):
-            analysis.extend(self._analyze_python_complexity(content, analysis_type))
-        
-        return analysis
+            return f"=== {file_path} ===\nError reading file: {e}"
     
-    def _analyze_directory(self, dir_path: str, analysis_type: str) -> List[str]:
-        """Analyze a directory."""
-        analysis = []
+    def _gather_directory_content(self, dir_path: str) -> str:
+        """Gather content from a directory for LLM analysis."""
+        content_parts = []
         
-        # File statistics
-        python_files = []
-        total_lines = 0
-        
-        for root, dirs, files in os.walk(dir_path):
-            for file in files:
-                if file.endswith('.py'):
-                    file_path = os.path.join(root, file)
-                    try:
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            content = f.read()
-                            lines = len(content.split('\n'))
-                            total_lines += lines
-                            python_files.append((file_path, lines))
-                    except:
-                        continue
-        
-        if analysis_type in ["metrics", "all"]:
-            analysis.append("## Directory Metrics")
-            analysis.append(f"- Python files: {len(python_files)}")
-            analysis.append(f"- Total lines of Python code: {total_lines}")
-            analysis.append("")
+        try:
+            # Gather relevant files from the directory
+            source_files = []
+            for root, dirs, files in os.walk(dir_path):
+                # Skip hidden and build directories
+                dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['__pycache__', 'node_modules', 'target', 'build']]
+                
+                for file in files:
+                    if file.endswith(('.py', '.js', '.ts', '.rs', '.go', '.java', '.cpp', '.h')):
+                        file_path = os.path.join(root, file)
+                        source_files.append(file_path)
             
-            # Largest files
-            if python_files:
-                python_files.sort(key=lambda x: x[1], reverse=True)
-                analysis.append("**Largest files:**")
-                for file_path, lines in python_files[:5]:
-                    rel_path = os.path.relpath(file_path, dir_path)
-                    analysis.append(f"- {rel_path}: {lines} lines")
-                analysis.append("")
+            # Add files up to a reasonable limit
+            for file_path in sorted(source_files)[:8]:
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()[:2000]  # Limit size per file
+                        content_parts.append(f"=== {file_path} ===\n{content}\n")
+                except:
+                    continue
+            
+        except Exception as e:
+            content_parts.append(f"Error reading directory {dir_path}: {e}")
         
-        return analysis
+        return "\n".join(content_parts)
     
-    def _analyze_python_complexity(self, content: str, analysis_type: str) -> List[str]:
-        """Analyze Python code complexity."""
-        analysis = []
-        lines = content.split('\n')
+    def _build_analysis_prompt(self, content: str, target: str, analysis_type: str) -> str:
+        """Build a prompt for LLM code analysis."""
+        analysis_instructions = {
+            "complexity": "Focus on code complexity, cyclomatic complexity, nesting levels, function sizes, and maintainability concerns.",
+            "patterns": "Identify design patterns, architectural patterns, code smells, anti-patterns, and coding conventions used.",
+            "issues": "Look for potential bugs, security vulnerabilities, performance issues, and code quality problems.",
+            "metrics": "Provide detailed metrics including lines of code, complexity scores, test coverage insights, and quantitative analysis.",
+            "all": "Provide comprehensive analysis covering complexity, patterns, potential issues, and key metrics."
+        }
         
-        if analysis_type in ["complexity", "all"]:
-            analysis.append("## Complexity Analysis")
-            
-            # Function/class count
-            functions = [line for line in lines if line.strip().startswith('def ')]
-            classes = [line for line in lines if line.strip().startswith('class ')]
-            
-            analysis.append(f"- Functions: {len(functions)}")
-            analysis.append(f"- Classes: {len(classes)}")
-            
-            # Indentation depth (rough complexity measure)
-            max_indent = 0
-            for line in lines:
-                if line.strip():
-                    indent = len(line) - len(line.lstrip())
-                    max_indent = max(max_indent, indent)
-            
-            analysis.append(f"- Maximum indentation depth: {max_indent // 4} levels")
-            analysis.append("")
+        analysis_instruction = analysis_instructions.get(analysis_type, analysis_instructions["all"])
         
-        if analysis_type in ["patterns", "all"]:
-            analysis.append("## Code Patterns")
-            
-            # Common patterns
-            imports = len([line for line in lines if line.strip().startswith(('import ', 'from '))])
-            analysis.append(f"- Import statements: {imports}")
-            
-            # Error handling
-            try_blocks = len([line for line in lines if 'try:' in line])
-            except_blocks = len([line for line in lines if 'except' in line])
-            analysis.append(f"- Try/except blocks: {try_blocks}/{except_blocks}")
-            
-            # Documentation
-            docstrings = len([line for line in lines if '"""' in line or "'''" in line])
-            analysis.append(f"- Docstring indicators: {docstrings}")
-            analysis.append("")
-        
-        return analysis
+        return f"""Please perform a detailed code analysis of the following code.
+
+TARGET: {target}
+ANALYSIS TYPE: {analysis_type}
+FOCUS: {analysis_instruction}
+
+CODE CONTENT:
+{content}
+
+Please provide a thorough markdown-formatted analysis that includes:
+
+1. **Code Quality Assessment** - Overall code quality, maintainability, and readability
+2. **Complexity Analysis** - Cyclomatic complexity, nesting levels, function/class sizes
+3. **Architecture & Patterns** - Design patterns used, architectural decisions, code organization
+4. **Potential Issues** - Code smells, security concerns, performance bottlenecks, bugs
+5. **Best Practices** - Adherence to coding standards, documentation quality, error handling
+6. **Recommendations** - Specific suggestions for improvement and refactoring opportunities
+
+Be specific and provide concrete examples from the code. Focus on actionable insights that would help developers improve the codebase."""

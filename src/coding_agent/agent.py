@@ -45,7 +45,7 @@ class CodingAgent:
             self.prompt_manager,
             self.tool_registry
         )
-        self.executor = PlanExecutor(self.tool_registry)
+        self.executor = PlanExecutor(self.tool_registry, self.config)
     
     def _create_model_provider(self):
         """Create model provider based on configuration."""
@@ -76,9 +76,9 @@ class CodingAgent:
         self.tool_registry.register(RunTestsTool())
         self.tool_registry.register(LintCodeTool())
         
-        # Analysis tools
-        self.tool_registry.register(SummarizeCodeTool())
-        self.tool_registry.register(AnalyzeCodeTool())
+        # Analysis tools (pass model provider for LLM analysis)
+        self.tool_registry.register(SummarizeCodeTool(self.model_provider))
+        self.tool_registry.register(AnalyzeCodeTool(self.model_provider))
     
     def process_request(self, user_prompt: str) -> str:
         """Process a user request with multi-step planning and execution."""

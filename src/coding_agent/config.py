@@ -30,11 +30,18 @@ class IndexerConfig(BaseModel):
     watch_enabled: bool = True
 
 
+class ExecutionConfig(BaseModel):
+    """Execution behavior configuration settings."""
+    auto_continue: bool = False
+    show_tool_output: list = []
+
+
 class AgentConfig(BaseModel):
     """Complete agent configuration."""
     model: ModelConfig = ModelConfig()
     database: DatabaseConfig = DatabaseConfig()
     indexer: IndexerConfig = IndexerConfig()
+    execution: ExecutionConfig = ExecutionConfig()
     debug: bool = False
 
 
@@ -104,6 +111,9 @@ class ConfigManager:
             "CODING_AGENT_INDEX_FILE": ["indexer", "index_file"],
             "CODING_AGENT_WATCH_ENABLED": ["indexer", "watch_enabled"],
             
+            # Execution settings
+            "CODING_AGENT_AUTO_CONTINUE": ["execution", "auto_continue"],
+            
             # General settings
             "CODING_AGENT_DEBUG": ["debug"]
         }
@@ -116,7 +126,7 @@ class ConfigManager:
                     value = float(value)
                 elif path[-1] in ["max_tokens", "max_summaries"]:
                     value = int(value) if value else None
-                elif path[-1] in ["cache_enabled", "watch_enabled", "debug"]:
+                elif path[-1] in ["cache_enabled", "watch_enabled", "debug", "auto_continue"]:
                     value = value.lower() in ["true", "1", "yes", "on"]
                 
                 # Set nested value
