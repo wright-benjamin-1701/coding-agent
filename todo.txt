@@ -1,0 +1,10 @@
+## Coding Agent TODO List
+
+### Global CLI Setup
+- [ ] Create global CLI command for the coding agent
+- [ ] Set up proper package structure for installation  
+- [ ] Create installation instructions
+- [ ] Make coding-agent script executable and add to PATH
+
+### Bug Fixes
+- [ ] Fix 'NoneType' object has no attribute 'lower' error in request processing

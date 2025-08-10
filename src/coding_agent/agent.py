@@ -146,7 +146,7 @@ class CodingAgent:
                 # Check for execution failures
                 if results and not results[-1].success:
                     failure_reason = results[-1].error if hasattr(results[-1], 'error') else "Unknown failure"
-                    if "cancelled" in failure_reason.lower():
+                    if failure_reason and "cancelled" in failure_reason.lower():
                         print(f"⏹️  Execution stopped: {failure_reason}")
                     else:
                         print(f"❌ Execution failed: {failure_reason}")
@@ -197,6 +197,10 @@ class CodingAgent:
     
     def _build_context(self, user_prompt: str) -> Context:
         """Build context for the request."""
+        # Ensure user_prompt is not None
+        if not user_prompt:
+            user_prompt = ""
+        
         # Get current commit
         try:
             commit_result = subprocess.run(
@@ -240,7 +244,7 @@ class CodingAgent:
         
         # Increase steps for complex requests
         complexity_keywords = ['refactor', 'implement', 'create', 'build', 'design', 'test', 'debug']
-        if any(keyword in context.user_prompt.lower() for keyword in complexity_keywords):
+        if context.user_prompt and any(keyword in context.user_prompt.lower() for keyword in complexity_keywords):
             base_steps += 2
         
         # Increase steps if many files are modified
@@ -249,7 +253,7 @@ class CodingAgent:
         
         # Reduce steps for simple requests
         simple_keywords = ['read', 'show', 'display', 'list', 'status']
-        if any(keyword in context.user_prompt.lower() for keyword in simple_keywords):
+        if context.user_prompt and any(keyword in context.user_prompt.lower() for keyword in simple_keywords):
             base_steps = max(3, base_steps - 2)
         
         return min(10, max(3, base_steps))  # Between 3 and 10 steps
