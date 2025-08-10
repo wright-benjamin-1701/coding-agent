@@ -55,7 +55,11 @@ class CodingAgent:
         self.orchestrator = PlanOrchestrator(
             self.model_provider,
             self.prompt_manager,
-            self.tool_registry
+            self.tool_registry,
+            self.config,
+            self.rag_db,
+            self.cache_service,
+            self.file_indexer
         )
         self.executor = PlanExecutor(self.tool_registry, self.config)
     
@@ -113,6 +117,10 @@ class CodingAgent:
         
         # Task evaluation and development tools
         self.tool_registry.register(TaskEvaluatorTool(agent_instance=self, cache_service=self.cache_service, read_tool=read_tool, search_tool=search_tool))
+        
+        # Configuration management tools
+        from .tools.prompt_enhancement_tool import PromptEnhancementTool
+        self.tool_registry.register(PromptEnhancementTool(self.config_manager))
         
         # Web viewer tool for debugging AI interactions
         from .tools.web_viewer_tool import WebViewerTool

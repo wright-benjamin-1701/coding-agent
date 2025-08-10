@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Union
 from .types import Plan, ToolAction, ConfirmationAction, Context, PlanMetadata
 from .providers.base import ModelProvider
 from .prompt_manager import PromptManager
+from .prompt_enhancer import PromptEnhancer
 from .tools.registry import ToolRegistry
 
 
@@ -14,10 +15,12 @@ class PlanOrchestrator:
     """Orchestrates plan generation with hybrid hardcoded + LLM approach."""
     
     def __init__(self, model_provider: ModelProvider, prompt_manager: PromptManager, 
-                 tool_registry: ToolRegistry):
+                 tool_registry: ToolRegistry, config=None, rag_db=None, cache_service=None, file_indexer=None):
         self.model_provider = model_provider
         self.prompt_manager = prompt_manager
         self.tool_registry = tool_registry
+        self.config = config
+        self.prompt_enhancer = PromptEnhancer(rag_db, cache_service, file_indexer) if config and config.prompt_enhancement.enabled else None
     
     def generate_plan(self, context: Context, previous_results: List = None, step: int = 1) -> Plan:
         """Generate an execution plan for the user request."""
@@ -69,8 +72,28 @@ class PlanOrchestrator:
             print("⚠️  Model provider not available")
             return []
         
+        # Enhance prompt if enabled (only on first step to avoid repetition)
+        enhanced_context = context
+        if self.prompt_enhancer and step == 1:
+            enhanced_prompt = self.prompt_enhancer.enhance_prompt(context.user_prompt, context)
+            if enhanced_prompt != context.user_prompt:
+                # Create enhanced context with the improved prompt
+                enhanced_context = Context(
+                    user_prompt=enhanced_prompt,
+                    current_commit=context.current_commit,
+                    modified_files=context.modified_files,
+                    recent_summaries=context.recent_summaries,
+                    debug=context.debug
+                )
+                
+                if self.config and self.config.prompt_enhancement.show_enhancements:
+                    enhancement_summary = self.prompt_enhancer.get_enhancement_summary(
+                        context.user_prompt, enhanced_prompt
+                    )
+                    print(f"🔧 {enhancement_summary}")
+        
         prompt = self.prompt_manager.build_prompt(
-            context, 
+            enhanced_context, 
             self.tool_registry.get_schemas(),
             previous_results
         )

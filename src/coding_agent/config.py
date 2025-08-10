@@ -44,6 +44,14 @@ class DirectiveConfig(BaseModel):
     )
 
 
+class PromptEnhancementConfig(BaseModel):
+    """Prompt enhancement configuration settings."""
+    enabled: bool = True
+    business_context: bool = True
+    extensibility_context: bool = True
+    show_enhancements: bool = False
+
+
 class AgentConfig(BaseModel):
     """Complete agent configuration."""
     model: ModelConfig = ModelConfig()
@@ -51,6 +59,7 @@ class AgentConfig(BaseModel):
     indexer: IndexerConfig = IndexerConfig()
     execution: ExecutionConfig = ExecutionConfig()
     directives: DirectiveConfig = DirectiveConfig()
+    prompt_enhancement: PromptEnhancementConfig = PromptEnhancementConfig()
     debug: bool = False
 
 

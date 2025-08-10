@@ -24,6 +24,7 @@ A thin, extensible coding agent with RAG (Retrieval-Augmented Generation) and to
 - **Web Interface**: Browser-based prompt submission and session viewing
 - **Enhanced Result Summarization**: Meaningful feedback instead of generic completion messages
 - **Improved User Experience**: Fixed confirmation loops and better error handling
+- **Intelligent Prompt Enhancement**: Automatically enhances prompts with business context, extensibility guidance, and RAG-based architecture considerations
 
 ## Installation
 
@@ -116,6 +117,7 @@ The system is designed with clear separation of concerns:
 - **Smart Writing**: `smart_write_file` - Intelligently places code by analyzing existing structure
 - **File Movement**: `move_file` - Move files and automatically update all imports and references
 - **Task Evaluation**: `evaluate_task` - Execute complex tasks and analyze the agent's performance for continuous improvement
+- **Prompt Enhancement**: `manage_prompt_enhancement` - Configure automatic prompt enhancements for business and extensibility context
 
 ## Configuration
 
@@ -252,6 +254,66 @@ Example session:
 - **Cache Service Integration**: Smart caching of file content and analysis results
 - **AST-Based Analysis**: Proper Python code parsing for refactoring and complexity analysis
 - **Multi-Language Support**: Code generation and analysis for Python, JavaScript, TypeScript, Java, and more
+- **Intelligent Prompt Enhancement**: Automatic enhancement of user requests with business context and extensibility guidance
+
+### Prompt Enhancement System
+
+The agent automatically enhances user prompts with additional context to improve output quality:
+
+**Business Context Enhancements:**
+- Stakeholder-friendly outputs and executive summaries
+- Enterprise coding standards and best practices  
+- Security implications and compliance considerations
+- Maintainability and team collaboration patterns
+
+**Extensibility Context Enhancements:**
+- Modular, loosely-coupled component design
+- Plugin/extension points for future needs
+- SOLID principles and design patterns
+- Configuration and customization options
+
+**RAG-Based Architecture Considerations:**
+- Language-specific conventions and best practices
+- Framework-specific patterns and guidelines
+- Project history and architectural decisions
+- Existing codebase patterns and structure consistency
+- Dependency-aware recommendations
+
+**Example Enhancement in Action:**
+
+Original request:
+```
+🤖 > create a new API endpoint for user authentication
+```
+
+Enhanced with RAG-based context:
+```
+create a new API endpoint for user authentication
+
+Consider business requirements:
+- Follow enterprise coding standards and best practices
+- Include comprehensive error handling and logging
+- Design for maintainability and team collaboration
+- Consider security implications and data protection
+
+Consider architecture requirements based on your codebase:
+- Language stack: Python
+- Follow Python conventions: PEP 8, type hints, docstrings
+- Flask patterns: blueprint organization, factory pattern, configuration management
+- Existing architectural patterns: Layered Architecture, Configuration-Based Design
+- Recent architectural decisions:
+  • Added JWT token authentication system...
+  • Implemented database connection pooling...
+- API considerations: versioning, authentication, rate limiting, documentation
+- Security considerations: input validation, authentication, authorization, encryption
+```
+
+**Configuration:**
+```bash
+🤖 > manage_prompt_enhancement show              # View current settings
+🤖 > manage_prompt_enhancement enable            # Enable enhancements  
+🤖 > manage_prompt_enhancement configure --business_context=true --show_enhancements=true
+```
 
 ## Extension Points
 

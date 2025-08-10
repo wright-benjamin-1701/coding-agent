@@ -22,5 +22,18 @@
     ],
     "watch_enabled": true
   },
+  "execution": {
+    "auto_continue": false,
+    "show_tool_output": []
+  },
+  "directives": {
+    "permanent_directives": []
+  },
+  "prompt_enhancement": {
+    "enabled": true,
+    "business_context": true,
+    "extensibility_context": true,
+    "show_enhancements": false
+  },
   "debug": false
 }
