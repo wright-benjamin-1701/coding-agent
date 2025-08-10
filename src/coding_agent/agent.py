@@ -30,6 +30,9 @@ from .tools.intelligent_code_review_tool import IntelligentCodeReviewTool
 from .tools.smart_refactoring_tool import SmartRefactoringTool
 from .tools.context_aware_code_generator import ContextAwareCodeGenerator
 from .tools.intelligent_debugging_tool import IntelligentDebuggingTool
+from .tools.technical_debt_tracker import TechnicalDebtTracker
+from .tools.code_review_assistant import CodeReviewAssistant
+from .tools.documentation_sync_tool import DocumentationSyncTool
 from .self_improvement import SelfImprovementLoop
 from .orchestrator import PlanOrchestrator
 from .executor import PlanExecutor
@@ -149,6 +152,9 @@ class CodingAgent:
         self.tool_registry.register(SmartRefactoringTool())
         self.tool_registry.register(ContextAwareCodeGenerator(self.model_provider))
         self.tool_registry.register(IntelligentDebuggingTool(self.model_provider))
+        self.tool_registry.register(TechnicalDebtTracker())
+        self.tool_registry.register(CodeReviewAssistant(self.model_provider))
+        self.tool_registry.register(DocumentationSyncTool(self.model_provider))
     
     def process_request(self, user_prompt: str) -> str:
         """Process a user request with multi-step planning and execution."""

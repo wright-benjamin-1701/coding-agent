@@ -39,13 +39,14 @@ class PlanExecutor:
             
             elif isinstance(action, ToolAction):
                 # Check if tool is destructive and needs confirmation
+                tool_confirmed = True  # Default to confirmed for non-destructive tools
                 try:
                     tool = self.tool_registry.get_tool(action.tool_name)
                     if tool.is_destructive:
                         # Ask for confirmation BEFORE execution
                         confirmation_message = f"Execute {action.tool_name} with parameters {action.parameters}?"
-                        confirmed = self._request_confirmation_for_tool(confirmation_message)
-                        if not confirmed:
+                        tool_confirmed = self._request_confirmation_for_tool(confirmation_message)
+                        if not tool_confirmed:
                             results.append(ToolResult(
                                 success=False, 
                                 output=None, 
@@ -57,21 +58,25 @@ class PlanExecutor:
                     # Tool doesn't exist, will be handled in _execute_tool_action
                     pass
                 
-                # Execute tool action
-                result = self._execute_tool_action(action)
-                results.append(result)
-                
-                # Show tool output if configured
-                self._maybe_show_tool_output(action.tool_name, result)
-                
-                # Log execution
-                self.execution_log.append({
-                    "action": action.dict(),
-                    "result": result.dict()
-                })
-                
-                # Stop on failure unless it's a non-critical tool
-                if not result.success and self._is_critical_tool(action.tool_name):
+                # Only execute tool action if confirmed (or non-destructive)
+                if tool_confirmed:
+                    result = self._execute_tool_action(action)
+                    results.append(result)
+                    
+                    # Show tool output if configured
+                    self._maybe_show_tool_output(action.tool_name, result)
+                    
+                    # Log execution
+                    self.execution_log.append({
+                        "action": action.dict(),
+                        "result": result.dict()
+                    })
+                    
+                    # Stop on failure unless it's a non-critical tool
+                    if not result.success and self._is_critical_tool(action.tool_name):
+                        break
+                # If not confirmed, we already added the cancellation result above and should stop
+                else:
                     break
         
         return results
