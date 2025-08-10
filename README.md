@@ -114,6 +114,7 @@ The system is designed with clear separation of concerns:
 - **Directive Management**: `manage_directives` - Permanent rules and behavior guidelines
 - **Smart Writing**: `smart_write_file` - Intelligently places code by analyzing existing structure
 - **File Movement**: `move_file` - Move files and automatically update all imports and references
+- **Task Evaluation**: `evaluate_task` - Execute complex tasks and analyze the agent's performance for continuous improvement
 
 ## Configuration
 

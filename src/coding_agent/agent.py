@@ -10,6 +10,7 @@ from .tools.registry import ToolRegistry
 from .tools.file_tools import ReadFileTool, WriteFileTool, SearchFilesTool
 from .tools.smart_write_tool import SmartWriteTool
 from .tools.file_move_tool import FileMoverTool
+from .tools.task_evaluator_tool import TaskEvaluatorTool
 from .tools.git_tools import GitStatusTool, GitDiffTool, GitCommitHashTool
 from .tools.brainstorm_tool import BrainstormSearchTermsTool
 from .tools.test_tools import RunTestsTool, LintCodeTool
@@ -103,6 +104,9 @@ class CodingAgent:
         self.tool_registry.register(SecurityScanTool())
         self.tool_registry.register(ArchitectureAnalysisTool())
         self.tool_registry.register(TestGeneratorTool(self.model_provider, self.cache_service, read_tool, search_tool))
+        
+        # Task evaluation and development tools
+        self.tool_registry.register(TaskEvaluatorTool(agent_instance=self, cache_service=self.cache_service, read_tool=read_tool, search_tool=search_tool))
         
         # Web viewer tool for debugging AI interactions
         from .tools.web_viewer_tool import WebViewerTool
