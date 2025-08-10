@@ -381,12 +381,13 @@ class FileMoverTool(Tool):
         new_import_path = os.path.splitext(new_relative)[0]
         
         # Update import statements
+        escaped_source = re.escape(source_name)
         patterns = [
-            (rf'import\s+([^}]+)\s+from\s+["\']([^"\']*{re.escape(source_name)}[^"\']*)["\']', 
+            (rf'import\s+([^{{}}]+)\s+from\s+["\']([^"\']*{escaped_source}[^"\']*)["\']', 
              lambda m: f'import {m.group(1)} from "{new_import_path}"'),
-            (rf'import\s+["\']([^"\']*{re.escape(source_name)}[^"\']*)["\']',
+            (rf'import\s+["\']([^"\']*{escaped_source}[^"\']*)["\']',
              lambda m: f'import "{new_import_path}"'),
-            (rf'require\s*\(\s*["\']([^"\']*{re.escape(source_name)}[^"\']*)["\']\s*\)',
+            (rf'require\s*\(\s*["\']([^"\']*{escaped_source}[^"\']*)["\']\s*\)',
              lambda m: f'require("{new_import_path}")')
         ]
         
