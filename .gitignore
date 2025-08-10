@@ -13,3 +13,5 @@ venv/
 
 .coding_agent_config.json
 *results.txt
+
+eda_notebook/
