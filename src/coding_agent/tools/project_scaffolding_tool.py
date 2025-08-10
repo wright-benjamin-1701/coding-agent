@@ -30,7 +30,8 @@ class ProjectScaffoldingTool(Tool):
                         "vite-react-ts", "vite-react-js", "create-react-app-ts", "create-react-app-js",
                         "nextjs-ts", "nextjs-js", "vue-ts", "vue-js", 
                         "express-ts", "express-js", "fastapi-python", "flask-python",
-                        "django-python", "nodejs-ts", "nodejs-js"
+                        "django-python", "nodejs-ts", "nodejs-js",
+                        "react-ts", "react-js", "vue", "express", "fastapi", "flask", "django", "node-ts", "node-js"
                     ],
                     "description": "Project template to use"
                 },
@@ -104,6 +105,10 @@ class ProjectScaffoldingTool(Tool):
             framework = parameters.get("framework")
             language = parameters.get("language") or parameters.get("variant")
             template = self._map_legacy_params_to_template(framework, language)
+        
+        # Normalize template name (handle short forms)
+        if template:
+            template = self._normalize_template_name(template)
         
         # Set default path if missing but we have project_name
         if not path and name:
@@ -183,6 +188,26 @@ class ProjectScaffoldingTool(Tool):
         }
         
         return mapping.get((framework, language))
+    
+    def _normalize_template_name(self, template: str) -> str:
+        """Normalize short template names to full names."""
+        template = template.lower()
+        
+        # Short name mappings
+        short_to_full = {
+            "react-ts": "vite-react-ts",
+            "react-js": "vite-react-js",
+            "react": "vite-react-js",  # Default React to JS
+            "vue": "vue-js",           # Default Vue to JS
+            "express": "express-js",   # Default Express to JS
+            "node-ts": "nodejs-ts",
+            "node-js": "nodejs-js",
+            "fastapi": "fastapi-python",
+            "flask": "flask-python",
+            "django": "django-python"
+        }
+        
+        return short_to_full.get(template, template)
     
     def _generate_project_scaffold(self, template: str, project_path: Path, name: str, options: Dict[str, Any]) -> List[str]:
         """Generate project files based on template."""
