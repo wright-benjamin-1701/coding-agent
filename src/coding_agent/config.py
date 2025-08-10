@@ -3,8 +3,8 @@
 import os
 import json
 from pathlib import Path
-from typing import Dict, Any, Optional
-from pydantic import BaseModel
+from typing import Dict, Any, Optional, List
+from pydantic import BaseModel, Field
 
 
 class ModelConfig(BaseModel):
@@ -36,12 +36,21 @@ class ExecutionConfig(BaseModel):
     show_tool_output: list = []
 
 
+class DirectiveConfig(BaseModel):
+    """Permanent directive configuration settings."""
+    permanent_directives: List[str] = Field(
+        default_factory=list,
+        description="Directives that are automatically injected into all plan generation prompts"
+    )
+
+
 class AgentConfig(BaseModel):
     """Complete agent configuration."""
     model: ModelConfig = ModelConfig()
     database: DatabaseConfig = DatabaseConfig()
     indexer: IndexerConfig = IndexerConfig()
     execution: ExecutionConfig = ExecutionConfig()
+    directives: DirectiveConfig = DirectiveConfig()
     debug: bool = False
 
 

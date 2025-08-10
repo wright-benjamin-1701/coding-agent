@@ -4,6 +4,7 @@ A thin, extensible coding agent with RAG (Retrieval-Augmented Generation) and to
 
 ## Features
 
+### Core Capabilities
 - **Interactive Text Interface**: Conversational Python program (no complex CLI)
 - **Model Provider Abstraction**: LLM-agnostic with built-in Ollama support
 - **RAG Database**: Context storage with SQLite for session history and file caching
@@ -12,7 +13,15 @@ A thin, extensible coding agent with RAG (Retrieval-Augmented Generation) and to
 - **Plan Executor**: Tool execution loop with confirmation for destructive actions
 - **File Indexing**: Automatic codebase indexing with change watching
 - **Configuration Management**: Environment variables, config files, and interactive setup
-- **Low Complexity**: Clean architecture with separated concerns
+
+### Advanced Development Features
+- **Comprehensive Code Generation**: Templates for classes, functions, APIs, React components
+- **Intelligent Refactoring**: AST-based code transformation and structure improvement
+- **Security Vulnerability Scanning**: Detection of secrets, injection risks, crypto issues
+- **Architecture Analysis**: Dependency mapping, circular dependency detection, complexity metrics
+- **Permanent Directive System**: Persistent behavior rules and coding standards
+- **Enhanced Result Summarization**: Meaningful feedback instead of generic completion messages
+- **Improved User Experience**: Fixed confirmation loops and better error handling
 
 ## Installation
 
@@ -48,6 +57,10 @@ coding-agent
 🤖 > add error handling to the main function
 🤖 > find all TODO comments  
 🤖 > run the tests
+🤖 > generate a React component for user login
+🤖 > scan for security vulnerabilities
+🤖 > refactor the database connection code
+🤖 > analyze the architecture dependencies
 ```
 
 ## Architecture
@@ -64,10 +77,18 @@ The system is designed with clear separation of concerns:
 
 ## Available Tools
 
+### Core Tools
 - **File Operations**: `read_file`, `write_file`, `search_files`
 - **Git Operations**: `git_status`, `git_diff`, `git_commit_hash`
 - **Testing**: `run_tests`, `lint_code`
-- **Analysis**: `brainstorm_search_terms`
+- **Analysis**: `brainstorm_search_terms`, `summarize_code`, `analyze_code`
+
+### Advanced Development Tools
+- **Code Generation**: `generate_code` - Create boilerplate, templates, and scaffolding
+- **Refactoring**: `refactor_code` - Extract functions, rename variables, move code blocks
+- **Security Scanning**: `security_scan` - Detect vulnerabilities, secrets, injection risks
+- **Architecture Analysis**: `analyze_architecture` - Dependency visualization, complexity metrics
+- **Directive Management**: `manage_directives` - Permanent rules and behavior guidelines
 
 ## Configuration
 
@@ -140,6 +161,10 @@ Once running, you can use these commands:
 🤖 > refactor the User class
 🤖 > run the unit tests
 🤖 > create a README for this project
+🤖 > extract this function into a separate method
+🤖 > scan this directory for hardcoded secrets
+🤖 > generate a Python class for data processing
+🤖 > add a permanent directive: "Always use type hints"
 ```
 
 ## User Experience
@@ -178,12 +203,35 @@ Example session:
 5. **Extensible Tools**: Easy to add new capabilities
 6. **Confirmation Gates**: Safety for destructive operations
 
+## Recent Updates (Latest Version)
+
+### Enhanced Tools & Capabilities
+- **Code Generation Tool**: Create boilerplate code for classes, functions, API endpoints, React components, and test files across multiple languages (Python, JavaScript/TypeScript, Java)
+- **Refactoring Tool**: Extract functions with intelligent parameter detection, rename variables with scope awareness, move code blocks between files
+- **Security Scanner**: Comprehensive vulnerability detection including hardcoded secrets (API keys, passwords, tokens), SQL injection risks, XSS vulnerabilities, cryptographic weaknesses, and unsafe operations
+- **Architecture Analyzer**: Dependency mapping, circular dependency detection, complexity metrics, design pattern recognition, and code smell identification
+- **Directive Management**: Persistent behavior rules that inject into all prompts for consistent coding standards
+
+### User Experience Improvements
+- **Better Result Summaries**: Replaced vague "X/Y actions complete" messages with detailed, meaningful summaries of what was accomplished
+- **Fixed Confirmation Loops**: Eliminated repetitive confirmation requests that blocked workflow
+- **Improved Search Results**: Better formatting and display of search results with context
+- **Enhanced Error Handling**: Cleaner error messages and graceful handling of edge cases
+
+### Technical Enhancements
+- **Permanent Directive System**: Configuration-based rules that persist across sessions
+- **Cache Service Integration**: Smart caching of file content and analysis results
+- **AST-Based Analysis**: Proper Python code parsing for refactoring and complexity analysis
+- **Multi-Language Support**: Code generation and analysis for Python, JavaScript, TypeScript, Java, and more
+
 ## Extension Points
 
 - Add new tools by implementing the `Tool` interface
 - Add new model providers by implementing `ModelProvider`
 - Extend the plan orchestrator for custom pre-actions
 - Enhance the file indexer for better symbol extraction
+- Create custom security rules in the SecurityScanTool
+- Add new code templates in the CodeGeneratorTool
 
 ## Database Schema
 

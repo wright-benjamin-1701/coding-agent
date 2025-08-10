@@ -7,7 +7,8 @@ from .types import Context
 class PromptManager:
     """Manages prompt templates and context injection."""
     
-    def __init__(self):
+    def __init__(self, config=None):
+        self.config = config
         self.system_template = self._load_system_template()
     
     def _load_system_template(self) -> str:
@@ -44,18 +45,22 @@ Example formats:
   {"type": "confirmation", "message": "Write new file test.py?", "destructive": true}
 ]}
 
-Return ONLY the JSON object, no other text or thinking."""
+Return ONLY the JSON object, no other text or thinking.
+
+{permanent_directives}"""
     
     def build_prompt(self, context: Context, available_tools: Dict[str, Any], previous_results: List = None) -> str:
         """Build the complete prompt with context injection."""
         tools_description = self._format_tools(available_tools)
         context_description = self._format_context(context, previous_results)
+        permanent_directives = self._format_permanent_directives()
         
         # Use string replacement instead of .format() to avoid issues with braces in tool descriptions
         result = self.system_template
         result = result.replace("{tools}", tools_description)
         result = result.replace("{context}", context_description) 
         result = result.replace("{user_prompt}", context.user_prompt)
+        result = result.replace("{permanent_directives}", permanent_directives)
         return result
     
     def _format_tools(self, tools: Dict[str, Any]) -> str:
@@ -103,3 +108,14 @@ Return ONLY the JSON object, no other text or thinking."""
         parts.append(f"Current commit: {context.current_commit}")
         
         return "\n".join(parts)
+    
+    def _format_permanent_directives(self) -> str:
+        """Format permanent directives for injection into prompts."""
+        if not self.config or not self.config.directives.permanent_directives:
+            return ""
+        
+        directives_text = "\nPERMANENT DIRECTIVES (must always follow):\n"
+        for i, directive in enumerate(self.config.directives.permanent_directives, 1):
+            directives_text += f"{i}. {directive}\n"
+        
+        return directives_text

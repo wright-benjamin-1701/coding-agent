@@ -12,6 +12,11 @@ from .tools.git_tools import GitStatusTool, GitDiffTool, GitCommitHashTool
 from .tools.brainstorm_tool import BrainstormSearchTermsTool
 from .tools.test_tools import RunTestsTool, LintCodeTool
 from .tools.analysis_tools import SummarizeCodeTool, AnalyzeCodeTool
+from .tools.directive_tools import DirectiveManagementTool
+from .tools.code_generation_tools import CodeGeneratorTool
+from .tools.refactoring_tools import RefactoringTool
+from .tools.security_tools import SecurityScanTool
+from .tools.architecture_tools import ArchitectureAnalysisTool
 from .orchestrator import PlanOrchestrator
 from .executor import PlanExecutor
 from .database.rag_db import RAGDatabase
@@ -29,7 +34,7 @@ class CodingAgent:
         
         # Initialize components based on config
         self.model_provider = self._create_model_provider()
-        self.prompt_manager = PromptManager()
+        self.prompt_manager = PromptManager(self.config)
         self.tool_registry = ToolRegistry()
         self.rag_db = RAGDatabase(self.config.database.db_path)
         self.cache_service = CacheService(self.rag_db)
@@ -81,6 +86,15 @@ class CodingAgent:
         # Analysis tools (pass model provider for LLM analysis)
         self.tool_registry.register(SummarizeCodeTool(self.model_provider))
         self.tool_registry.register(AnalyzeCodeTool(self.model_provider))
+        
+        # Directive management tool
+        self.tool_registry.register(DirectiveManagementTool(self.config_manager))
+        
+        # Code generation and development tools
+        self.tool_registry.register(CodeGeneratorTool(self.model_provider))
+        self.tool_registry.register(RefactoringTool())
+        self.tool_registry.register(SecurityScanTool())
+        self.tool_registry.register(ArchitectureAnalysisTool())
     
     def process_request(self, user_prompt: str) -> str:
         """Process a user request with multi-step planning and execution."""
