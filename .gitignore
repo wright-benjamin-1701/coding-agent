@@ -10,3 +10,5 @@ sessions/
 config.json
 *index.json
 venv/
+
+.coding_agent_config.json
