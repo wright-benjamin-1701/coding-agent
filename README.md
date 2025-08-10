@@ -100,6 +100,7 @@ The system is designed with clear separation of concerns:
 
 ### Core Tools
 - **File Operations**: `read_file`, `write_file`, `search_files`, `smart_write_file`, `move_file`
+- **Directory Operations**: `create_directory`, `remove_directory`, `list_directory`
 - **Git Operations**: `git_status`, `git_diff`, `git_commit_hash`
 - **Testing**: `run_tests`, `lint_code`
 - **Analysis**: `brainstorm_search_terms`, `summarize_code`, `analyze_code`

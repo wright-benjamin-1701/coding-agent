@@ -38,6 +38,25 @@ class PlanExecutor:
                     ))
             
             elif isinstance(action, ToolAction):
+                # Check if tool is destructive and needs confirmation
+                try:
+                    tool = self.tool_registry.get_tool(action.tool_name)
+                    if tool.is_destructive:
+                        # Ask for confirmation BEFORE execution
+                        confirmation_message = f"Execute {action.tool_name} with parameters {action.parameters}?"
+                        confirmed = self._request_confirmation_for_tool(confirmation_message)
+                        if not confirmed:
+                            results.append(ToolResult(
+                                success=False, 
+                                output=None, 
+                                error="User cancelled destructive action",
+                                action_description=f"Cancelled: {action.tool_name}"
+                            ))
+                            break
+                except Exception:
+                    # Tool doesn't exist, will be handled in _execute_tool_action
+                    pass
+                
                 # Execute tool action
                 result = self._execute_tool_action(action)
                 results.append(result)
@@ -79,6 +98,19 @@ class PlanExecutor:
         print(f"\n⚠️  {action.message}")
         if action.destructive:
             print("This action is destructive and cannot be undone.")
+        
+        # Check for auto-continue setting
+        if self.config and self.config.execution.auto_continue:
+            print("Auto-continue enabled - proceeding automatically.")
+            return True
+        
+        response = input("Continue? (y/N): ").strip().lower()
+        return response in ['y', 'yes']
+    
+    def _request_confirmation_for_tool(self, message: str) -> bool:
+        """Request user confirmation for destructive tool actions."""
+        print(f"\n⚠️  {message}")
+        print("This action will modify files or system state.")
         
         # Check for auto-continue setting
         if self.config and self.config.execution.auto_continue:
