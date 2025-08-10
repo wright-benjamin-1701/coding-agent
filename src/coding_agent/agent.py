@@ -234,6 +234,7 @@ class CodingAgent:
             
             # Generate summary
             summary = self._generate_summary(user_prompt, all_results)
+            success = True  # If we reach here, execution was successful
             
             # Store session
             self.rag_db.store_session(
