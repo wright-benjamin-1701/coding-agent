@@ -30,7 +30,7 @@ class CodeGeneratorTool(Tool):
             "properties": {
                 "template": {
                     "type": "string",
-                    "enum": ["class", "function", "api_endpoint", "react_component", "test_file", "config", "custom"],
+                    "enum": ["class", "function", "api_endpoint", "react_component", "react-component", "test_file", "config", "custom"],
                     "description": "Type of code to generate"
                 },
                 "language": {
@@ -85,7 +85,17 @@ class CodeGeneratorTool(Tool):
         
         # Auto-detect language if not provided
         if not language:
-            language = self._detect_prominent_language()
+            # Try to detect from file path first
+            if file_path:
+                language = self._detect_language_from_file_path(file_path)
+            
+            # Fallback to project-wide detection
+            if not language:
+                language = self._detect_prominent_language()
+        
+        # Normalize template name (handle dashes vs underscores)
+        if template:
+            template = template.replace('-', '_')
         
         # Handle missing template by inferring from context
         if not template:
@@ -93,7 +103,11 @@ class CodeGeneratorTool(Tool):
         
         # Default name if not provided
         if not name:
-            name = template or "generated_code"
+            if file_path:
+                # Extract name from file path (remove extension)
+                name = Path(file_path).stem
+            else:
+                name = template or "generated_code"
         
         # Final validation - ensure we have valid values
         if not template:
@@ -460,6 +474,30 @@ app.listen(PORT, () => {{
         # Default to python if detection fails
         return 'python'
     
+    def _detect_language_from_file_path(self, file_path: str) -> Optional[str]:
+        """Detect programming language from file path extension."""
+        if not file_path:
+            return None
+        
+        ext = Path(file_path).suffix.lower()
+        
+        # Map extensions to languages
+        ext_to_lang = {
+            '.tsx': 'typescript',
+            '.ts': 'typescript', 
+            '.jsx': 'javascript',
+            '.js': 'javascript',
+            '.py': 'python',
+            '.java': 'java',
+            '.go': 'go',
+            '.rs': 'rust',
+            '.cpp': 'cpp',
+            '.c': 'cpp',
+            '.cc': 'cpp'
+        }
+        
+        return ext_to_lang.get(ext)
+    
     def _infer_template_from_context(self, parameters: dict, language: str) -> str:
         """Infer template type from available parameters and context."""
         # Check for specific template hints in parameters
@@ -473,6 +511,13 @@ app.listen(PORT, () => {{
                 return 'api_endpoint'
             elif 'test' in directory:
                 return 'test_file'
+        
+        # Check file path for hints
+        file_path = parameters.get('file_path', '')
+        if file_path:
+            file_name = os.path.basename(file_path).lower()
+            if 'component' in file_name or file_path.endswith(('.tsx', '.jsx')):
+                return 'react_component'
         
         # Check for description hints
         description = parameters.get('description', '').lower()
