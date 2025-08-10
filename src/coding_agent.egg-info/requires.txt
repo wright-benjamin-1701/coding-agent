@@ -2,3 +2,4 @@ requests
 watchdog
 pydantic
 gitpython
+pyyaml

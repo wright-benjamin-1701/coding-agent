@@ -46,6 +46,10 @@ class CodeGeneratorTool(Tool):
                     "type": "string",
                     "description": "Path where the generated code should be saved"
                 },
+                "content": {
+                    "type": "string",
+                    "description": "Direct code content to write to file (alternative to template generation)"
+                },
                 "description": {
                     "type": "string",
                     "description": "Detailed description of what the code should do (for LLM generation)"
@@ -62,7 +66,7 @@ class CodeGeneratorTool(Tool):
                     }
                 }
             },
-            "required": ["template", "language", "name"]
+            "required": []
         }
     
     @property
@@ -75,6 +79,7 @@ class CodeGeneratorTool(Tool):
         language = parameters.get("language")
         name = parameters.get("name")
         file_path = parameters.get("file_path")
+        content = parameters.get("content")
         description = parameters.get("description", "")
         template_params = parameters.get("parameters", {})
         
@@ -99,8 +104,10 @@ class CodeGeneratorTool(Tool):
             name = "generated_code"  # Ultimate fallback
         
         try:
-            # Generate code based on template type
-            if template == "custom" and description:
+            # If content is provided directly, use that instead of generating
+            if content:
+                generated_code = content
+            elif template == "custom" and description:
                 # Use LLM for custom code generation
                 if not self.model_provider or not self.model_provider.is_available():
                     return ToolResult(
@@ -109,9 +116,15 @@ class CodeGeneratorTool(Tool):
                         error="LLM provider not available for custom code generation"
                     )
                 generated_code = self._generate_custom_code(language, name, description, template_params)
-            else:
+            elif template:
                 # Use predefined templates
                 generated_code = self._generate_template_code(template, language, name, template_params)
+            else:
+                return ToolResult(
+                    success=False,
+                    output=None,
+                    error="Must provide either 'content' or 'template' parameter"
+                )
             
             if not generated_code:
                 return ToolResult(
@@ -122,7 +135,15 @@ class CodeGeneratorTool(Tool):
             
             # Determine file path if not provided
             if not file_path:
-                file_path = self._determine_file_path(template, language, name)
+                if template and language and name:
+                    file_path = self._determine_file_path(template, language, name)
+                else:
+                    # When using direct content, require file_path to be provided
+                    return ToolResult(
+                        success=False,
+                        output=None,
+                        error="file_path must be provided when using direct content"
+                    )
             
             # Optionally write to file
             if file_path:

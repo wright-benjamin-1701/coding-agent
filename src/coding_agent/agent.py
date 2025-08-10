@@ -128,6 +128,10 @@ class CodingAgent:
         
         # Code generation and development tools
         self.tool_registry.register(CodeGeneratorTool(self.model_provider))
+        
+        # Project scaffolding tool
+        from .tools.project_scaffolding_tool import ProjectScaffoldingTool
+        self.tool_registry.register(ProjectScaffoldingTool())
         self.tool_registry.register(RefactoringTool())
         self.tool_registry.register(SecurityScanTool())
         self.tool_registry.register(ArchitectureAnalysisTool())
@@ -135,6 +139,12 @@ class CodingAgent:
         
         # Task evaluation and development tools
         self.tool_registry.register(TaskEvaluatorTool(agent_instance=self, cache_service=self.cache_service, read_tool=read_tool, search_tool=search_tool))
+        
+        # RAG-powered knowledge transfer and analysis
+        from .tools.knowledge_transfer_tool import KnowledgeTransferTool
+        from .tools.pattern_recognition_tool import PatternRecognitionTool
+        self.tool_registry.register(KnowledgeTransferTool(self.rag_db))
+        self.tool_registry.register(PatternRecognitionTool(self.rag_db))
         
         # Configuration management tools
         from .tools.prompt_enhancement_tool import PromptEnhancementTool

@@ -9,4 +9,5 @@ Requires-Dist: requests
 Requires-Dist: watchdog
 Requires-Dist: pydantic
 Requires-Dist: gitpython
+Requires-Dist: pyyaml
 Dynamic: license-file
