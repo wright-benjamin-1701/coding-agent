@@ -254,6 +254,55 @@ class CodingAgent:
                 print(f"Full traceback: {traceback.format_exc()}")
             print(f"❌ {error_msg}")
             return error_msg
+        
+        finally:
+            # Record interaction for self-improvement
+            execution_time = time.time() - start_time
+            interaction_hash = self.self_improvement.record_interaction(
+                user_prompt=user_prompt,
+                agent_response=summary if success else error_msg,
+                tools_used=tools_used,
+                success=success,
+                execution_time=execution_time,
+                context_data={'modified_files': getattr(context, 'modified_files', []) if 'context' in locals() else []}
+            )
+            
+            # Periodically analyze and learn (every 10 interactions)
+            if len(self.self_improvement.interactions) % 10 == 0:
+                insights = self.self_improvement.analyze_and_learn()
+                if insights:
+                    print(f"🧠 Generated {len(insights)} new learning insights")
+                    
+                    # Show high-confidence insights
+                    high_confidence = [i for i in insights if i.confidence > 0.8]
+                    if high_confidence:
+                        print("💡 High-confidence insights:")
+                        for insight in high_confidence[:3]:
+                            print(f"   • {insight.description}")
+            
+            return interaction_hash if 'interaction_hash' in locals() else None
+    
+    def add_user_feedback(self, interaction_hash: str, feedback: str, score: float = None):
+        """Add user feedback for self-improvement learning."""
+        self.self_improvement.add_user_feedback(interaction_hash, feedback, score)
+    
+    def get_improvement_report(self) -> str:
+        """Get self-improvement analysis report."""
+        return self.self_improvement.generate_self_improvement_report()
+    
+    def get_learning_insights(self, insight_type: str = None) -> List[Dict[str, Any]]:
+        """Get active learning insights."""
+        insights = self.self_improvement.get_active_insights(insight_type)
+        return [
+            {
+                'type': insight.insight_type,
+                'description': insight.description,
+                'confidence': insight.confidence,
+                'action': insight.suggested_action,
+                'evidence': insight.evidence
+            }
+            for insight in insights
+        ]
     
     def _build_context(self, user_prompt: str) -> Context:
         """Build context for the request."""

@@ -6,6 +6,7 @@ from .code_quality_metrics_tool import CodeQualityMetricsTool
 from .intelligent_code_review_tool import IntelligentCodeReviewTool
 from .smart_refactoring_tool import SmartRefactoringTool
 from .context_aware_code_generator import ContextAwareCodeGenerator
+from .intelligent_debugging_tool import IntelligentDebuggingTool
 
 __all__ = [
     "AntiPatternParser",
@@ -13,5 +14,6 @@ __all__ = [
     "CodeQualityMetricsTool",
     "IntelligentCodeReviewTool",
     "SmartRefactoringTool",
-    "ContextAwareCodeGenerator"
+    "ContextAwareCodeGenerator",
+    "IntelligentDebuggingTool"
 ]
