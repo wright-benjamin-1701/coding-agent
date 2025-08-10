@@ -139,7 +139,7 @@ class CodingAgent:
         
         # Web viewer tool for debugging AI interactions
         from .tools.web_viewer_tool import WebViewerTool
-        self.tool_registry.register(WebViewerTool(agent_instance=self))
+        self.tool_registry.register(WebViewerTool())
         
         # Advanced code analysis tools
         self.tool_registry.register(AntiPatternParser())

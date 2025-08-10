@@ -15,3 +15,6 @@ venv/
 *results.txt
 
 eda_notebook/
+
+.agent_learning/
+.anti_patterns.json

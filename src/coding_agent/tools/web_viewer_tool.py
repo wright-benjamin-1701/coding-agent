@@ -17,9 +17,8 @@ from ..types import ToolResult
 class WebViewerHandler(BaseHTTPRequestHandler):
     """HTTP handler for the web viewer."""
     
-    def __init__(self, *args, db_path: str = None, agent_instance=None, **kwargs):
+    def __init__(self, *args, db_path: str = None, **kwargs):
         self.db_path = db_path or ".coding_agent.db"
-        self.agent_instance = agent_instance
         super().__init__(*args, **kwargs)
     
     def do_GET(self):
@@ -41,10 +40,7 @@ class WebViewerHandler(BaseHTTPRequestHandler):
     
     def do_POST(self):
         """Handle POST requests."""
-        if self.path == "/api/submit":
-            self.handle_submit()
-        else:
-            self.send_error(404)
+        self.send_error(404)
     
     def serve_index(self):
         """Serve the main HTML page."""
@@ -81,7 +77,6 @@ class WebViewerHandler(BaseHTTPRequestHandler):
         <div class="nav">
             <button onclick="showSessions()">📋 Sessions</button>
             <button onclick="showFiles()">📁 File Cache</button>
-            <button onclick="showPrompt()">💬 Submit Prompt</button>
             <button onclick="refreshData()">🔄 Refresh</button>
         </div>
         
@@ -93,18 +88,6 @@ class WebViewerHandler(BaseHTTPRequestHandler):
         <div id="files-view" style="display: none;">
             <h2>Cached Files</h2>
             <div id="files-list">Loading files...</div>
-        </div>
-        
-        <div id="prompt-view" style="display: none;">
-            <h2>Submit Prompt to Coding Agent</h2>
-            <div style="margin: 20px 0;">
-                <textarea id="prompt-input" rows="6" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px;" placeholder="Enter your coding request here..."></textarea>
-            </div>
-            <div style="margin: 10px 0;">
-                <button onclick="submitPrompt()" style="padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer;">🚀 Submit</button>
-                <button onclick="clearPrompt()" style="padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 5px; cursor: pointer; margin-left: 10px;">🗑️ Clear</button>
-            </div>
-            <div id="prompt-result" style="margin-top: 20px;"></div>
         </div>
         
         <div id="session-details" class="details">
@@ -124,22 +107,13 @@ class WebViewerHandler(BaseHTTPRequestHandler):
         function showFiles() {
             document.getElementById('sessions-view').style.display = 'none';
             document.getElementById('files-view').style.display = 'block';
-            document.getElementById('prompt-view').style.display = 'none';
             document.getElementById('session-details').style.display = 'none';
             loadFiles();
-        }
-        
-        function showPrompt() {
-            document.getElementById('sessions-view').style.display = 'none';
-            document.getElementById('files-view').style.display = 'none';
-            document.getElementById('prompt-view').style.display = 'block';
-            document.getElementById('session-details').style.display = 'none';
         }
         
         function showSessionDetails(sessionId) {
             document.getElementById('sessions-view').style.display = 'none';
             document.getElementById('files-view').style.display = 'none';
-            document.getElementById('prompt-view').style.display = 'none';
             document.getElementById('session-details').style.display = 'block';
             loadSessionDetails(sessionId);
         }
@@ -249,64 +223,6 @@ class WebViewerHandler(BaseHTTPRequestHandler):
             } else if (document.getElementById('files-view').style.display !== 'none') {
                 loadFiles();
             }
-        }
-        
-        async function submitPrompt() {
-            const promptInput = document.getElementById('prompt-input');
-            const resultDiv = document.getElementById('prompt-result');
-            const prompt = promptInput.value.trim();
-            
-            if (!prompt) {
-                alert('Please enter a prompt');
-                return;
-            }
-            
-            // Show loading state
-            resultDiv.innerHTML = '<div style="color: #007bff;">🔄 Processing request...</div>';
-            
-            try {
-                const response = await fetch('/api/submit', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ prompt: prompt })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    resultDiv.innerHTML = `
-                        <div style="background: #d4edda; padding: 15px; border-radius: 5px; margin-top: 10px;">
-                            <h4 style="color: #155724; margin-top: 0;">✅ Success</h4>
-                            <pre style="background: white; padding: 10px; border-radius: 3px; white-space: pre-wrap;">${escapeHtml(result.output)}</pre>
-                        </div>
-                    `;
-                    // Clear the input after successful submission
-                    promptInput.value = '';
-                    // Refresh sessions to show the new one
-                    loadSessions();
-                } else {
-                    resultDiv.innerHTML = `
-                        <div style="background: #f8d7da; padding: 15px; border-radius: 5px; margin-top: 10px;">
-                            <h4 style="color: #721c24; margin-top: 0;">❌ Error</h4>
-                            <p>${escapeHtml(result.error)}</p>
-                        </div>
-                    `;
-                }
-            } catch (error) {
-                resultDiv.innerHTML = `
-                    <div style="background: #f8d7da; padding: 15px; border-radius: 5px; margin-top: 10px;">
-                        <h4 style="color: #721c24; margin-top: 0;">❌ Error</h4>
-                        <p>Failed to submit prompt: ${error.message}</p>
-                    </div>
-                `;
-            }
-        }
-        
-        function clearPrompt() {
-            document.getElementById('prompt-input').value = '';
-            document.getElementById('prompt-result').innerHTML = '';
         }
         
         function escapeHtml(text) {
@@ -419,53 +335,6 @@ class WebViewerHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self.send_error(500, f"Database error: {str(e)}")
     
-    def handle_submit(self):
-        """Handle prompt submission."""
-        try:
-            # Read the request body
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode('utf-8'))
-            
-            prompt = data.get('prompt', '').strip()
-            if not prompt:
-                self.send_response(400)
-                self.send_header('Content-type', 'application/json; charset=utf-8')
-                self.end_headers()
-                response = {"success": False, "error": "No prompt provided"}
-                self.wfile.write(json.dumps(response).encode('utf-8'))
-                return
-            
-            # Check if agent instance is available
-            if not self.agent_instance:
-                self.send_response(503)
-                self.send_header('Content-type', 'application/json; charset=utf-8')
-                self.end_headers()
-                response = {"success": False, "error": "Agent instance not available"}
-                self.wfile.write(json.dumps(response).encode('utf-8'))
-                return
-            
-            # Process the request using the agent
-            try:
-                result = self.agent_instance.process_request(prompt)
-                self.send_response(200)
-                self.send_header('Content-type', 'application/json; charset=utf-8')
-                self.end_headers()
-                response = {"success": True, "output": result}
-                self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
-            except Exception as agent_error:
-                self.send_response(500)
-                self.send_header('Content-type', 'application/json; charset=utf-8')
-                self.end_headers()
-                response = {"success": False, "error": f"Agent processing error: {str(agent_error)}"}
-                self.wfile.write(json.dumps(response).encode('utf-8'))
-                
-        except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json; charset=utf-8')
-            self.end_headers()
-            response = {"success": False, "error": f"Server error: {str(e)}"}
-            self.wfile.write(json.dumps(response).encode('utf-8'))
     
     def log_message(self, format, *args):
         """Suppress log messages."""
@@ -475,10 +344,9 @@ class WebViewerHandler(BaseHTTPRequestHandler):
 class WebViewerTool(Tool):
     """Tool for launching a web interface to view AI model interactions."""
     
-    def __init__(self, agent_instance=None):
+    def __init__(self):
         self.server = None
         self.server_thread = None
-        self.agent_instance = agent_instance
     
     @property
     def name(self) -> str:
@@ -530,9 +398,9 @@ class WebViewerTool(Tool):
                     error=f"Database not found at {db_path}. Run some coding agent commands first."
                 )
             
-            # Create handler with database path and agent instance
+            # Create handler with database path
             def handler_factory(*args, **kwargs):
-                return WebViewerHandler(*args, db_path=db_path, agent_instance=self.agent_instance, **kwargs)
+                return WebViewerHandler(*args, db_path=db_path, **kwargs)
             
             # Start server
             self.server = HTTPServer(('localhost', port), handler_factory)
