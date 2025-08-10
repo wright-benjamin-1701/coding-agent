@@ -22,6 +22,12 @@ from .tools.refactoring_tools import RefactoringTool
 from .tools.security_tools import SecurityScanTool
 from .tools.architecture_tools import ArchitectureAnalysisTool
 from .tools.test_generator_tool import TestGeneratorTool
+from .tools.anti_pattern_parser import AntiPatternParser
+from .tools.semantic_search_tool import SemanticSearchTool
+from .tools.code_quality_metrics_tool import CodeQualityMetricsTool
+from .tools.intelligent_code_review_tool import IntelligentCodeReviewTool
+from .tools.smart_refactoring_tool import SmartRefactoringTool
+from .tools.context_aware_code_generator import ContextAwareCodeGenerator
 from .orchestrator import PlanOrchestrator
 from .executor import PlanExecutor
 from .database.rag_db import RAGDatabase
@@ -125,6 +131,14 @@ class CodingAgent:
         # Web viewer tool for debugging AI interactions
         from .tools.web_viewer_tool import WebViewerTool
         self.tool_registry.register(WebViewerTool(agent_instance=self))
+        
+        # Advanced code analysis tools
+        self.tool_registry.register(AntiPatternParser())
+        self.tool_registry.register(SemanticSearchTool())
+        self.tool_registry.register(CodeQualityMetricsTool())
+        self.tool_registry.register(IntelligentCodeReviewTool(self.model_provider))
+        self.tool_registry.register(SmartRefactoringTool())
+        self.tool_registry.register(ContextAwareCodeGenerator(self.model_provider))
     
     def process_request(self, user_prompt: str) -> str:
         """Process a user request with multi-step planning and execution."""

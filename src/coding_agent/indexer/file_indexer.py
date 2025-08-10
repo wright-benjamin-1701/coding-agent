@@ -137,6 +137,10 @@ class FileIndexer:
                 updated_files.append(str(file_path.relative_to(self.root_path)))
         
         self._save_index()
+        
+        # Run anti-pattern analysis after indexing
+        self._run_anti_pattern_analysis()
+        
         return updated_files
     
     def update_file(self, file_path: str):
@@ -167,6 +171,31 @@ class FileIndexer:
     def get_files_by_extension(self, extension: str) -> List[str]:
         """Get all files with given extension."""
         return [path for path in self.index.keys() if path.endswith(extension)]
+    
+    def _run_anti_pattern_analysis(self):
+        """Run anti-pattern analysis on indexed files."""
+        try:
+            # Import here to avoid circular imports
+            from ..tools.anti_pattern_parser import AntiPatternParser
+            
+            parser = AntiPatternParser()
+            issues = parser._scan_path(str(self.root_path))
+            
+            if issues:
+                print("\n🚨 Anti-pattern issues detected:")
+                for issue in issues:
+                    print(f"  📋 Rule: {issue['rule']}")
+                    if issue['description']:
+                        print(f"     Description: {issue['description']}")
+                    print(f"     File: {issue['file']}")
+                    for pattern_info in issue['patterns_found']:
+                        lines_str = ", ".join(map(str, pattern_info['lines']))
+                        print(f"     Pattern '{pattern_info['pattern']}' found at lines: {lines_str}")
+                    print()
+            else:
+                print("✅ No anti-pattern issues detected")
+        except Exception as e:
+            print(f"Warning: Anti-pattern analysis failed: {e}")
 
 
 class FileWatcher(FileSystemEventHandler):
