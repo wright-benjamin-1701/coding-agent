@@ -40,6 +40,10 @@ class TestGeneratorTool(Tool):
                     "type": "string",
                     "description": "Path to the source file to generate tests for"
                 },
+                "directory": {
+                    "type": "string", 
+                    "description": "Directory to scan for files to generate tests for (alternative to file_path)"
+                },
                 "function_name": {
                     "type": "string",
                     "description": "Specific function to test (optional, if not provided tests all functions)"
@@ -74,8 +78,8 @@ class TestGeneratorTool(Tool):
                     "description": "Whether to generate mocks for external dependencies",
                     "default": True
                 }
-            },
-            "required": ["file_path"]
+            }
+            # Either file_path or directory is required, not both
         }
     
     @property
@@ -85,6 +89,7 @@ class TestGeneratorTool(Tool):
     def execute(self, **parameters) -> ToolResult:
         """Generate tests for the specified code."""
         file_path = parameters.get("file_path")
+        directory = parameters.get("directory")
         function_name = parameters.get("function_name")
         test_framework = parameters.get("test_framework", "auto")
         test_types = parameters.get("test_types", ["unit", "edge_cases", "error_handling"])
@@ -92,11 +97,19 @@ class TestGeneratorTool(Tool):
         output_file = parameters.get("output_file")
         mock_dependencies = parameters.get("mock_dependencies", True)
         
+        # Handle directory mode
+        if directory and not file_path:
+            return self._generate_tests_for_directory(
+                directory, function_name, test_framework, test_types, 
+                coverage_target, output_file, mock_dependencies
+            )
+        
+        # Handle single file mode
         if not file_path:
             return ToolResult(
                 success=False,
                 output=None,
-                error="Missing file_path parameter"
+                error="Missing file_path or directory parameter"
             )
         
         if not os.path.exists(file_path):
@@ -733,3 +746,78 @@ class TestGeneratorTool(Tool):
             test_code += f"}});\n\n"
         
         return test_code
+    
+    def _generate_tests_for_directory(self, directory: str, function_name: str, 
+                                    test_framework: str, test_types: List[str],
+                                    coverage_target: str, output_file: str, 
+                                    mock_dependencies: bool) -> ToolResult:
+        """Generate tests for all files in a directory."""
+        if not os.path.exists(directory):
+            return ToolResult(
+                success=False,
+                output=None,
+                error=f"Directory not found: {directory}"
+            )
+        
+        # Find source files to test
+        source_files = []
+        supported_extensions = ['.py', '.js', '.ts', '.jsx', '.tsx']
+        
+        for root, dirs, files in os.walk(directory):
+            # Skip test directories and node_modules
+            dirs[:] = [d for d in dirs if d not in ['tests', '__tests__', 'test', 'node_modules', '.git', '__pycache__']]
+            
+            for file in files:
+                file_path = os.path.join(root, file)
+                if any(file.endswith(ext) for ext in supported_extensions):
+                    # Skip files that are already tests
+                    if not any(test_marker in file.lower() for test_marker in ['test_', '_test', '.test.', '.spec.']):
+                        source_files.append(file_path)
+        
+        if not source_files:
+            return ToolResult(
+                success=False,
+                output=None,
+                error=f"No testable source files found in {directory}"
+            )
+        
+        # Limit to reasonable number of files
+        if len(source_files) > 10:
+            source_files = source_files[:10]
+        
+        results = []
+        failed_files = []
+        
+        for file_path in source_files:
+            try:
+                # Generate tests for this file
+                result = self.execute(
+                    file_path=file_path,
+                    function_name=function_name,
+                    test_framework=test_framework,
+                    test_types=test_types,
+                    coverage_target=coverage_target,
+                    mock_dependencies=mock_dependencies
+                )
+                
+                if result.success:
+                    results.append(f"✅ {file_path}")
+                else:
+                    failed_files.append(f"❌ {file_path}: {result.error}")
+                    
+            except Exception as e:
+                failed_files.append(f"❌ {file_path}: {str(e)}")
+        
+        # Generate summary
+        summary = f"Generated tests for {len(results)} files in {directory}:\n"
+        summary += "\n".join(results)
+        
+        if failed_files:
+            summary += f"\n\nFailed files ({len(failed_files)}):\n"
+            summary += "\n".join(failed_files)
+        
+        return ToolResult(
+            success=len(results) > 0,
+            output=summary,
+            action_description=f"Generated tests for {len(results)} files in {directory}"
+        )
