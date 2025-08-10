@@ -95,6 +95,10 @@ class CodingAgent:
         self.tool_registry.register(RefactoringTool())
         self.tool_registry.register(SecurityScanTool())
         self.tool_registry.register(ArchitectureAnalysisTool())
+        
+        # Web viewer tool for debugging AI interactions
+        from .tools.web_viewer_tool import WebViewerTool
+        self.tool_registry.register(WebViewerTool())
     
     def process_request(self, user_prompt: str) -> str:
         """Process a user request with multi-step planning and execution."""

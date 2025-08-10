@@ -49,13 +49,32 @@ class RAGDatabase:
                 CREATE INDEX IF NOT EXISTS idx_file_cache_commit 
                 ON file_cache(commit_hash)
             """)
+            
+            # Add model interactions table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS model_interactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id INTEGER,
+                    timestamp TEXT NOT NULL,
+                    step_number INTEGER NOT NULL,
+                    prompt TEXT NOT NULL,
+                    response TEXT NOT NULL,
+                    metadata TEXT,  -- JSON metadata
+                    FOREIGN KEY (session_id) REFERENCES sessions(id)
+                )
+            """)
+            
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_model_interactions_session 
+                ON model_interactions(session_id)
+            """)
     
     def store_session(self, user_prompt: str, commit_hash: str, 
                      modified_files: List[str], summary: str,
                      execution_log: Optional[Dict[str, Any]] = None):
-        """Store a session record."""
+        """Store a session record and return the session ID."""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
+            cursor = conn.execute("""
                 INSERT INTO sessions 
                 (timestamp, user_prompt, commit_hash, modified_files, summary, execution_log)
                 VALUES (?, ?, ?, ?, ?, ?)
@@ -66,6 +85,25 @@ class RAGDatabase:
                 json.dumps(modified_files),
                 summary,
                 json.dumps(execution_log) if execution_log else None
+            ))
+            return cursor.lastrowid
+    
+    def store_model_interaction(self, session_id: int, step_number: int, 
+                               prompt: str, response: str, 
+                               metadata: Optional[Dict[str, Any]] = None):
+        """Store a model interaction."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                INSERT INTO model_interactions
+                (session_id, timestamp, step_number, prompt, response, metadata)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                session_id,
+                datetime.now().isoformat(),
+                step_number,
+                prompt,
+                response,
+                json.dumps(metadata) if metadata else None
             ))
     
     def get_recent_summaries(self, limit: int = 5) -> List[str]:

@@ -44,10 +44,17 @@ class PlanOrchestrator:
         
         # Only keep minimal file-based pre-actions - let LLM handle everything else
         
-        # If request mentions files not in modified_files, scan them first
-        file_mentions = re.findall(r'[a-zA-Z0-9_./]+\.[a-zA-Z]+', context.user_prompt)
+        # If request mentions files or directories, handle appropriately
+        file_mentions = re.findall(r'[a-zA-Z0-9_./]+(?:\.[a-zA-Z]+|/\.\.\.?)', context.user_prompt)
         for file_path in file_mentions:
-            if file_path not in context.modified_files:
+            # If it's a directory pattern like "src/..." or "src/", use search_files instead
+            if file_path.endswith("/...") or file_path.endswith("/"):
+                directory = file_path.rstrip("/...")
+                pre_actions.append(ToolAction(
+                    tool_name="search_files",
+                    parameters={"pattern": ".", "directory": directory}
+                ))
+            elif file_path not in context.modified_files:
                 pre_actions.append(ToolAction(
                     tool_name="read_file",
                     parameters={"file_path": file_path}

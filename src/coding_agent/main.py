@@ -57,7 +57,11 @@ class CodingAgentUI:
                 print("❌ Failed to initialize agent. Check your configuration.")
                 return False
             
-            print("✅ Agent ready!\n")
+            print("✅ Agent ready!")
+            
+            # Auto-start web viewer
+            self.start_web_viewer()
+            
             return True
             
         except Exception as e:
@@ -203,6 +207,19 @@ class CodingAgentUI:
         print(f"🐛 Debug mode {status}")
         if enable:
             print("   Debug will show full prompts and responses when no actions are generated")
+        print()
+    
+    def start_web_viewer(self):
+        """Start the web viewer automatically."""
+        try:
+            web_viewer_tool = self.agent.tool_registry.get_tool("web_viewer")
+            result = web_viewer_tool.execute(port=8080, open_browser=True)
+            if result.success:
+                print(f"🌐 {result.output}")
+            else:
+                print(f"⚠️  Could not start web viewer: {result.error}")
+        except Exception as e:
+            print(f"⚠️  Web viewer not available: {e}")
         print()
     
     def handle_request(self, user_input: str):
