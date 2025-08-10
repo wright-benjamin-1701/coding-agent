@@ -75,6 +75,7 @@ class PlanOrchestrator:
             previous_results
         )
         
+        print("🧠 Waiting for model response...")
         response = self.model_provider.generate(prompt)
         
         # Always show debug info if debug mode is enabled

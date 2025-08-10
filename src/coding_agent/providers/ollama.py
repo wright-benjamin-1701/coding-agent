@@ -16,6 +16,9 @@ class OllamaProvider(ModelProvider):
     def generate(self, prompt: str, **kwargs) -> ModelResponse:
         """Generate a response using Ollama."""
         try:
+            # Set a reasonable timeout (5 minutes for generation, 10 seconds for connection)
+            timeout = kwargs.pop("timeout", (10, 300))
+            
             response = requests.post(
                 f"{self.base_url}/api/generate",
                 json={
@@ -23,7 +26,8 @@ class OllamaProvider(ModelProvider):
                     "prompt": prompt,
                     "stream": False,
                     **kwargs
-                }
+                },
+                timeout=timeout
             )
             response.raise_for_status()
             data = response.json()
@@ -31,6 +35,16 @@ class OllamaProvider(ModelProvider):
             return ModelResponse(
                 content=data.get("response", ""),
                 metadata=data
+            )
+        except requests.exceptions.Timeout:
+            return ModelResponse(
+                content="",
+                metadata={"error": "Request timed out. The model may be taking too long to respond or Ollama may be unresponsive."}
+            )
+        except requests.exceptions.ConnectionError:
+            return ModelResponse(
+                content="",
+                metadata={"error": "Could not connect to Ollama. Is Ollama running and accessible?"}
             )
         except Exception as e:
             return ModelResponse(
@@ -41,7 +55,7 @@ class OllamaProvider(ModelProvider):
     def is_available(self) -> bool:
         """Check if Ollama is available."""
         try:
-            response = requests.get(f"{self.base_url}/api/tags")
+            response = requests.get(f"{self.base_url}/api/tags", timeout=5)
             return response.status_code == 200
         except:
             return False
