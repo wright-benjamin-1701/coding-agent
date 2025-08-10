@@ -47,6 +47,7 @@ src/coding_agent/tools/intelligent_code_review_tool.py
 src/coding_agent/tools/intelligent_debugging_tool.py
 src/coding_agent/tools/knowledge_transfer_tool.py
 src/coding_agent/tools/pattern_recognition_tool.py
+src/coding_agent/tools/project_scaffolding_tool.py
 src/coding_agent/tools/prompt_enhancement_tool.py
 src/coding_agent/tools/refactoring_tools.py
 src/coding_agent/tools/registry.py
