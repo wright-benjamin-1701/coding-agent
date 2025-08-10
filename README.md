@@ -80,6 +80,8 @@ python coding-agent
 🤖 > analyze the architecture dependencies
 🤖 > generate tests for my_module.py
 🤖 > create comprehensive tests for the User class
+🤖 > move user_service.py to services/user_service.py
+🤖 > relocate all auth files to the auth/ directory
 ```
 
 ## Architecture
@@ -97,7 +99,7 @@ The system is designed with clear separation of concerns:
 ## Available Tools
 
 ### Core Tools
-- **File Operations**: `read_file`, `write_file`, `search_files`, `smart_write_file`
+- **File Operations**: `read_file`, `write_file`, `search_files`, `smart_write_file`, `move_file`
 - **Git Operations**: `git_status`, `git_diff`, `git_commit_hash`
 - **Testing**: `run_tests`, `lint_code`
 - **Analysis**: `brainstorm_search_terms`, `summarize_code`, `analyze_code`
@@ -111,6 +113,7 @@ The system is designed with clear separation of concerns:
 - **Architecture Analysis**: `analyze_architecture` - Dependency visualization, complexity metrics
 - **Directive Management**: `manage_directives` - Permanent rules and behavior guidelines
 - **Smart Writing**: `smart_write_file` - Intelligently places code by analyzing existing structure
+- **File Movement**: `move_file` - Move files and automatically update all imports and references
 
 ## Configuration
 
@@ -230,6 +233,7 @@ Example session:
 ### Enhanced Tools & Capabilities
 - **Code Generation Tool**: Create boilerplate code for classes, functions, API endpoints, React components, and test files across multiple languages (Python, JavaScript/TypeScript, Java)
 - **Test Generator Tool**: Automatically generate comprehensive tests by analyzing existing code, including unit tests, edge cases, error handling, and mock generation for Python (pytest/unittest) and JavaScript (Jest/Vitest/Mocha)
+- **File Movement Tool**: Move files and automatically update all import statements across the codebase, supporting Python (absolute/relative imports) and JavaScript/TypeScript (ES6/CommonJS imports) with backup and dry-run capabilities
 - **Refactoring Tool**: Extract functions with intelligent parameter detection, rename variables with scope awareness, move code blocks between files
 - **Security Scanner**: Comprehensive vulnerability detection including hardcoded secrets (API keys, passwords, tokens), SQL injection risks, XSS vulnerabilities, cryptographic weaknesses, and unsafe operations
 - **Architecture Analyzer**: Dependency mapping, circular dependency detection, complexity metrics, design pattern recognition, and code smell identification

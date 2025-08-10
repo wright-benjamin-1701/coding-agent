@@ -9,6 +9,7 @@ from .prompt_manager import PromptManager
 from .tools.registry import ToolRegistry
 from .tools.file_tools import ReadFileTool, WriteFileTool, SearchFilesTool
 from .tools.smart_write_tool import SmartWriteTool
+from .tools.file_move_tool import FileMoverTool
 from .tools.git_tools import GitStatusTool, GitDiffTool, GitCommitHashTool
 from .tools.brainstorm_tool import BrainstormSearchTermsTool
 from .tools.test_tools import RunTestsTool, LintCodeTool
@@ -75,6 +76,7 @@ class CodingAgent:
         self.tool_registry.register(WriteFileTool())
         self.tool_registry.register(search_tool)
         self.tool_registry.register(SmartWriteTool(self.cache_service, search_tool, read_tool))
+        self.tool_registry.register(FileMoverTool(self.cache_service, read_tool, search_tool))
         
         # Git tools
         self.tool_registry.register(GitStatusTool())
