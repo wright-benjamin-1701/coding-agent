@@ -106,16 +106,31 @@ class RAGDatabase:
                 json.dumps(metadata) if metadata else None
             ))
     
-    def get_recent_summaries(self, limit: int = 5) -> List[str]:
-        """Get recent session summaries."""
+    def get_recent_summaries(self, limit: int = 5, current_prompt: str = None, 
+                           use_relevance_filter: bool = True) -> List[str]:
+        """Get recent session summaries, optionally filtered by relevance."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("""
                 SELECT summary FROM sessions 
                 ORDER BY timestamp DESC 
                 LIMIT ?
-            """, (limit,))
+            """, (limit * 2,))  # Get more to allow for filtering
             
-            return [row[0] for row in cursor.fetchall()]
+            summaries = [row[0] for row in cursor.fetchall()]
+            
+            # Apply relevance filtering if requested and prompt provided
+            if use_relevance_filter and current_prompt and summaries:
+                from ..relevance_filter import RelevanceFilter
+                
+                filter_instance = RelevanceFilter(min_similarity_threshold=0.15)
+                relevant_summaries = filter_instance.filter_relevant_summaries(
+                    current_prompt, summaries, max_summaries=limit
+                )
+                
+                # Return only the summaries (without scores)
+                return [summary for summary, score in relevant_summaries]
+            
+            return summaries[:limit]
     
     def search_similar_prompts(self, query: str, limit: int = 3) -> List[Dict[str, Any]]:
         """Search for similar prompts using simple text matching."""

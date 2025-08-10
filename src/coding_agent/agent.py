@@ -304,6 +304,46 @@ class CodingAgent:
             for insight in insights
         ]
     
+    def debug_context_relevance(self, user_prompt: str) -> Dict[str, Any]:
+        """Debug relevance filtering for context building."""
+        from .relevance_filter import RelevanceFilter
+        
+        # Get all recent summaries without filtering
+        all_summaries = self.rag_db.get_recent_summaries(
+            limit=10, current_prompt=None, use_relevance_filter=False
+        )
+        
+        if not all_summaries:
+            return {"message": "No summaries found in database"}
+        
+        filter_instance = RelevanceFilter(min_similarity_threshold=0.15)
+        debug_info = []
+        
+        for i, summary in enumerate(all_summaries):
+            debug_data = filter_instance.get_debug_info(user_prompt, summary)
+            debug_info.append({
+                'summary_index': i,
+                'summary_preview': summary[:100] + "..." if len(summary) > 100 else summary,
+                'debug_data': debug_data
+            })
+        
+        # Get filtered results
+        filtered_summaries = filter_instance.filter_relevant_summaries(
+            user_prompt, all_summaries, max_summaries=5
+        )
+        
+        return {
+            'current_prompt': user_prompt,
+            'total_summaries': len(all_summaries),
+            'filtered_count': len(filtered_summaries),
+            'threshold': filter_instance.min_similarity_threshold,
+            'detailed_analysis': debug_info,
+            'filtered_results': [
+                {'summary': s[:100] + "...", 'score': score} 
+                for s, score in filtered_summaries
+            ]
+        }
+    
     def _build_context(self, user_prompt: str) -> Context:
         """Build context for the request."""
         # Ensure user_prompt is not None
@@ -336,8 +376,12 @@ class CodingAgent:
         except:
             modified_files = []
         
-        # Get recent summaries
-        recent_summaries = self.rag_db.get_recent_summaries(self.config.database.max_summaries)
+        # Get recent summaries with relevance filtering
+        recent_summaries = self.rag_db.get_recent_summaries(
+            limit=self.config.database.max_summaries,
+            current_prompt=user_prompt,
+            use_relevance_filter=True
+        )
         
         return Context(
             user_prompt=user_prompt,
