@@ -1,6 +1,7 @@
 """Main coding agent that coordinates all components."""
 
 import subprocess
+import time
 from typing import List, Dict, Any
 from .types import Context
 from .config import ConfigManager, AgentConfig
@@ -28,6 +29,8 @@ from .tools.code_quality_metrics_tool import CodeQualityMetricsTool
 from .tools.intelligent_code_review_tool import IntelligentCodeReviewTool
 from .tools.smart_refactoring_tool import SmartRefactoringTool
 from .tools.context_aware_code_generator import ContextAwareCodeGenerator
+from .tools.intelligent_debugging_tool import IntelligentDebuggingTool
+from .self_improvement import SelfImprovementLoop
 from .orchestrator import PlanOrchestrator
 from .executor import PlanExecutor
 from .database.rag_db import RAGDatabase
@@ -52,6 +55,12 @@ class CodingAgent:
         self.file_indexer = FileIndexer(
             root_path=".",
             index_file=self.config.indexer.index_file
+        )
+        
+        # Initialize self-improvement loop
+        self.self_improvement = SelfImprovementLoop(
+            model_provider=self.model_provider,
+            data_dir=".agent_learning"
         )
         
         # Register core tools
@@ -139,9 +148,14 @@ class CodingAgent:
         self.tool_registry.register(IntelligentCodeReviewTool(self.model_provider))
         self.tool_registry.register(SmartRefactoringTool())
         self.tool_registry.register(ContextAwareCodeGenerator(self.model_provider))
+        self.tool_registry.register(IntelligentDebuggingTool(self.model_provider))
     
     def process_request(self, user_prompt: str) -> str:
         """Process a user request with multi-step planning and execution."""
+        start_time = time.time()
+        tools_used = []
+        success = False
+        
         try:
             # Build context
             context = self._build_context(user_prompt)
@@ -179,6 +193,11 @@ class CodingAgent:
                 print(f"\n⚡ Executing plan step {step}...")
                 results = self.executor.execute_plan(plan)
                 all_results.extend(results)
+                
+                # Track tools used for self-improvement
+                for action in plan.actions:
+                    if hasattr(action, 'tool_name') and action.tool_name not in tools_used:
+                        tools_used.append(action.tool_name)
                 
                 # Show immediate results for successful actions
                 self._display_step_results(results)
