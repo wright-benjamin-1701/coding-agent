@@ -42,6 +42,16 @@ class ProjectScaffoldingTool(Tool):
                     "type": "string",
                     "description": "Project name (defaults to directory name)"
                 },
+                "framework": {
+                    "type": "string",
+                    "description": "Framework for the project (legacy parameter - use template instead)",
+                    "enum": ["react", "vue", "express", "fastapi", "flask", "django", "nodejs"]
+                },
+                "language": {
+                    "type": "string", 
+                    "description": "Programming language (legacy parameter - use template instead)",
+                    "enum": ["javascript", "typescript", "python"]
+                },
                 "options": {
                     "type": "object",
                     "description": "Additional template options",
@@ -55,7 +65,7 @@ class ProjectScaffoldingTool(Tool):
                     }
                 }
             },
-            "required": ["template", "path"]
+            "required": ["path"]
         }
     
     @property
@@ -66,14 +76,20 @@ class ProjectScaffoldingTool(Tool):
         """Create a project scaffold."""
         template = parameters.get("template")
         path = parameters.get("path")
-        name = parameters.get("name") or os.path.basename(path)
+        name = parameters.get("name") or os.path.basename(path) if path else None
         options = parameters.get("options", {})
+        
+        # Handle legacy parameter format (framework + language)
+        if not template:
+            framework = parameters.get("framework")
+            language = parameters.get("language")
+            template = self._map_legacy_params_to_template(framework, language)
         
         if not template or not path:
             return ToolResult(
                 success=False,
                 output=None,
-                error="Both 'template' and 'path' parameters are required"
+                error="Either 'template' parameter or both 'framework' and 'language' parameters are required, along with 'path'"
             )
         
         try:
@@ -118,6 +134,31 @@ class ProjectScaffoldingTool(Tool):
                 output=None,
                 error=f"Project creation failed: {str(e)}"
             )
+    
+    def _map_legacy_params_to_template(self, framework: Optional[str], language: Optional[str]) -> Optional[str]:
+        """Map legacy framework + language parameters to template names."""
+        if not framework or not language:
+            return None
+        
+        framework = framework.lower()
+        language = language.lower()
+        
+        # Map framework + language combinations to template names
+        mapping = {
+            ("react", "typescript"): "vite-react-ts",
+            ("react", "javascript"): "vite-react-js", 
+            ("vue", "typescript"): "vue-ts",
+            ("vue", "javascript"): "vue-js",
+            ("express", "typescript"): "express-ts",
+            ("express", "javascript"): "express-js",
+            ("nodejs", "typescript"): "nodejs-ts", 
+            ("nodejs", "javascript"): "nodejs-js",
+            ("fastapi", "python"): "fastapi-python",
+            ("flask", "python"): "flask-python",
+            ("django", "python"): "django-python"
+        }
+        
+        return mapping.get((framework, language))
     
     def _generate_project_scaffold(self, template: str, project_path: Path, name: str, options: Dict[str, Any]) -> List[str]:
         """Generate project files based on template."""
