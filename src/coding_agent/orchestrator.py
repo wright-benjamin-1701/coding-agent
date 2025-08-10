@@ -33,10 +33,13 @@ class PlanOrchestrator:
         # Step 2: Generate LLM plan (with previous results if available)
         llm_actions = self._generate_llm_plan(context, previous_results, step)
         
-        # Step 3: Combine actions
-        all_actions = pre_actions + llm_actions
+        # Step 3: Add validation step for complex tasks if needed
+        validation_actions = self._get_validation_actions(context, previous_results, step)
         
-        # Step 4: Analyze plan and generate metadata
+        # Step 4: Combine actions
+        all_actions = pre_actions + llm_actions + validation_actions
+        
+        # Step 5: Analyze plan and generate metadata
         metadata = self._analyze_plan(all_actions, previous_results, step, context)
         
         return Plan(actions=all_actions, metadata=metadata)
@@ -64,6 +67,102 @@ class PlanOrchestrator:
                 ))
         
         return pre_actions
+    
+    def _get_validation_actions(self, context: Context, previous_results: List = None, step: int = 1) -> List[Union[ToolAction, ConfirmationAction]]:
+        """Add validation actions for complex tasks that likely need verification."""
+        validation_actions = []
+        
+        # Only add validation for complex tasks that involve creation or modification
+        if not self._is_complex_task(context, previous_results, step):
+            return validation_actions
+        
+        # Don't add validation on first step - let implementation happen first
+        if step < 2:
+            return validation_actions
+        
+        # Check if we have done significant work that needs validation
+        if previous_results and self._has_significant_changes(previous_results):
+            # Add task evaluation for complex projects
+            validation_actions.append(ToolAction(
+                tool_name="evaluate_task",
+                parameters={
+                    "task_description": context.user_prompt,
+                    "output_directory": ".",
+                    "evaluation_criteria": ["completeness", "functionality", "code_quality"],
+                    "expected_deliverables": self._extract_deliverables(context.user_prompt)
+                }
+            ))
+        
+        return validation_actions
+    
+    def _is_complex_task(self, context: Context, previous_results: List = None, step: int = 1) -> bool:
+        """Determine if this is a complex task that needs validation."""
+        prompt = context.user_prompt.lower()
+        
+        # Keywords that indicate complex tasks
+        complex_keywords = [
+            'create app', 'build app', 'application', 'web app', 'api', 
+            'database', 'full stack', 'multiple files', 'project', 'system',
+            'implement', 'features', 'functionality', 'website', 'service'
+        ]
+        
+        # Check for complex patterns
+        has_complex_keywords = any(keyword in prompt for keyword in complex_keywords)
+        has_multiple_requirements = len(prompt.split(' and ')) > 2 or len(prompt.split(',')) > 2
+        
+        return has_complex_keywords or has_multiple_requirements
+    
+    def _has_significant_changes(self, previous_results: List) -> bool:
+        """Check if previous results indicate significant changes were made."""
+        if not previous_results:
+            return False
+        
+        # Count successful file operations
+        file_operations = 0
+        for result in previous_results:
+            if hasattr(result, 'success') and result.success:
+                action_desc = getattr(result, 'action_description', '').lower()
+                if any(op in action_desc for op in ['wrote', 'created', 'generated', 'moved', 'modified']):
+                    file_operations += 1
+        
+        return file_operations >= 2  # Multiple file changes indicate significant work
+    
+    def _extract_deliverables(self, prompt: str) -> List[str]:
+        """Extract expected deliverables from the user prompt."""
+        deliverables = []
+        prompt_lower = prompt.lower()
+        
+        # Common deliverable patterns
+        if 'create' in prompt_lower or 'build' in prompt_lower:
+            if 'table' in prompt_lower:
+                deliverables.append('table creation functionality')
+            if 'app' in prompt_lower or 'application' in prompt_lower:
+                deliverables.append('working application')
+            if 'api' in prompt_lower:
+                deliverables.append('API endpoints')
+            if 'database' in prompt_lower:
+                deliverables.append('database operations')
+            if 'web' in prompt_lower:
+                deliverables.append('web interface')
+        
+        # Extract specific features mentioned
+        features = []
+        if 'view' in prompt_lower:
+            features.append('view functionality')
+        if 'edit' in prompt_lower:
+            features.append('edit functionality')  
+        if 'add' in prompt_lower:
+            features.append('add functionality')
+        if 'delete' in prompt_lower or 'remove' in prompt_lower or 'drop' in prompt_lower:
+            features.append('delete functionality')
+        
+        deliverables.extend(features)
+        
+        # Default if nothing specific found
+        if not deliverables:
+            deliverables.append('completed implementation')
+        
+        return deliverables
     
     def _generate_llm_plan(self, context: Context, previous_results: List = None, step: int = 1) -> List[Union[ToolAction, ConfirmationAction]]:
         """Generate plan using LLM."""
@@ -259,6 +358,12 @@ class PlanOrchestrator:
         # Check for completion-indicating actions
         completion_actions = ['run_tests', 'lint_code', 'git_commit', 'summarize_code', 'analyze_code']
         has_completion_action = any(a.tool_name in completion_actions for a in tool_actions if hasattr(a, 'tool_name'))
+        
+        # For complex tasks, require validation or evaluation before considering final
+        if self._is_complex_task(context, previous_results, step):
+            validation_actions = ['evaluate_task', 'run_tests']
+            has_validation = any(a.tool_name in validation_actions for a in tool_actions if hasattr(a, 'tool_name'))
+            return has_validation and step > 3  # Require more steps for complex tasks
         
         return has_completion_action and step > 2
     

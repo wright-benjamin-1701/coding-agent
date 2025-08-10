@@ -67,7 +67,7 @@ class CodeGeneratorTool(Tool):
     
     @property
     def is_destructive(self) -> bool:
-        return True  # Creates new files
+        return False  # Creating new files with unused filenames is not destructive
     
     def execute(self, **parameters) -> ToolResult:
         """Generate code based on template type and parameters."""
@@ -77,6 +77,14 @@ class CodeGeneratorTool(Tool):
         file_path = parameters.get("file_path")
         description = parameters.get("description", "")
         template_params = parameters.get("parameters", {})
+        
+        # Auto-detect language if not provided
+        if not language:
+            language = self._detect_prominent_language()
+        
+        # Default name if not provided
+        if not name:
+            name = template or "generated_code"
         
         try:
             # Generate code based on template type
@@ -366,6 +374,53 @@ app.listen(PORT, () => {{
         response = re.sub(r'^(Here\'s|Here is).*?:\\n', '', response, flags=re.IGNORECASE | re.MULTILINE)
         
         return response.strip()
+    
+    def _detect_prominent_language(self) -> str:
+        """Detect the most prominent programming language in the current directory."""
+        try:
+            file_counts = {}
+            
+            # Count files by extension in current directory and subdirectories
+            for root, dirs, files in os.walk('.'):
+                # Skip hidden directories and common build/cache directories
+                dirs[:] = [d for d in dirs if not d.startswith('.') and d not in {'node_modules', '__pycache__', 'venv', 'env'}]
+                
+                for file in files:
+                    if file.startswith('.'):
+                        continue
+                    ext = Path(file).suffix.lower()
+                    file_counts[ext] = file_counts.get(ext, 0) + 1
+            
+            # Map extensions to languages
+            ext_to_lang = {
+                '.py': 'python',
+                '.js': 'javascript',
+                '.ts': 'typescript',
+                '.jsx': 'javascript',
+                '.tsx': 'typescript',
+                '.java': 'java',
+                '.go': 'go',
+                '.rs': 'rust',
+                '.cpp': 'cpp',
+                '.c': 'cpp',
+                '.cc': 'cpp'
+            }
+            
+            # Find most common language
+            lang_counts = {}
+            for ext, count in file_counts.items():
+                if ext in ext_to_lang:
+                    lang = ext_to_lang[ext]
+                    lang_counts[lang] = lang_counts.get(lang, 0) + count
+            
+            if lang_counts:
+                return max(lang_counts, key=lang_counts.get)
+            
+        except Exception:
+            pass  # If detection fails, fall back to default
+        
+        # Default to python if detection fails
+        return 'python'
     
     def _determine_file_path(self, template: str, language: str, name: str) -> str:
         """Determine appropriate file path for generated code."""

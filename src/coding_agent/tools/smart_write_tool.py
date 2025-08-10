@@ -67,9 +67,25 @@ class SmartWriteTool(Tool):
             "required": ["file_path", "content"]
         }
     
-    @property
     def is_destructive(self) -> bool:
-        return True
+        # Creating new files with unused filenames is not destructive
+        # Only modifying existing files is destructive
+        return False
+    
+    def is_destructive_for_params(self, **parameters) -> bool:
+        """Check if this specific operation would be destructive."""
+        file_path = parameters.get("file_path")
+        force_overwrite = parameters.get("force_overwrite", False)
+        
+        if not file_path:
+            return False
+        
+        # If force_overwrite is True, it's potentially destructive
+        if force_overwrite:
+            return True
+        
+        # If file exists, modifying it could be destructive
+        return os.path.exists(file_path)
     
     def execute(self, **parameters) -> ToolResult:
         """Write content with intelligent placement."""

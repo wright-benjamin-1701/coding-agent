@@ -84,7 +84,7 @@ class TestGeneratorTool(Tool):
     
     @property
     def is_destructive(self) -> bool:
-        return True  # Creates new test files
+        return False  # Creating new test files with unused filenames is not destructive
     
     def execute(self, **parameters) -> ToolResult:
         """Generate tests for the specified code."""

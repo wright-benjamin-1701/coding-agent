@@ -35,6 +35,12 @@ IMPORTANT GUIDELINES:
 - Simple information requests should complete without user intervention
 - If the user asked a question and you found the answer, the task is complete
 
+TASK COMPLETION REQUIREMENTS:
+- For complex tasks (apps, systems, multiple features), ensure ALL requirements are met before considering the task complete
+- If the original request mentioned specific features (e.g., "view tables, create table, drop table, add columns, add rows, edit values"), each feature must be fully implemented
+- Don't stop after creating basic structure - implement the actual functionality
+- Verify that generated code actually works and includes error handling
+
 Example formats:
 // For simple read-only tasks (NO confirmation needed):
 {"actions": [{"type": "tool_use", "tool_name": "search_files", "parameters": {"pattern": "class", "path": "src"}}]}
