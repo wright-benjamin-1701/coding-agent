@@ -419,17 +419,18 @@ class TestGeneratorTool(Tool):
         
         for arg in args:
             arg_name = arg["name"]
-            annotation = arg.get("annotation", "")
+            annotation = arg.get("annotation", "") or ""
+            annotation = annotation.lower()
             
-            if "int" in annotation.lower() or "number" in annotation.lower():
+            if "int" in annotation or "number" in annotation:
                 edge_cases.extend([f"{arg_name}=0", f"{arg_name}=-1", f"{arg_name}=sys.maxsize"])
-            elif "str" in annotation.lower() or "string" in annotation.lower():
+            elif "str" in annotation or "string" in annotation:
                 edge_cases.extend([f'{arg_name}=""', f'{arg_name}="test"', f'{arg_name}=None'])
-            elif "list" in annotation.lower() or "array" in annotation.lower():
+            elif "list" in annotation or "array" in annotation:
                 edge_cases.extend([f"{arg_name}=[]", f'{arg_name}=[1, 2, 3]', f"{arg_name}=None"])
-            elif "dict" in annotation.lower() or "object" in annotation.lower():
+            elif "dict" in annotation or "object" in annotation:
                 edge_cases.extend([f"{arg_name}={{}}", f'{arg_name}={{"key": "value"}}', f"{arg_name}=None"])
-            elif "bool" in annotation.lower():
+            elif "bool" in annotation:
                 edge_cases.extend([f"{arg_name}=True", f"{arg_name}=False"])
             else:
                 edge_cases.extend([f"{arg_name}=None"])
@@ -687,20 +688,21 @@ class TestGeneratorTool(Tool):
         lines = []
         for arg in args:
             arg_name = arg["name"]
-            annotation = arg.get("annotation", "")
+            annotation = arg.get("annotation", "") or ""
             default = arg.get("default")
+            annotation = annotation.lower()
             
             if default:
                 lines.append(f"        {arg_name} = {default}")
-            elif "int" in annotation.lower():
+            elif "int" in annotation:
                 lines.append(f"        {arg_name} = 42")
-            elif "str" in annotation.lower():
+            elif "str" in annotation:
                 lines.append(f'        {arg_name} = "test_value"')
-            elif "list" in annotation.lower():
+            elif "list" in annotation:
                 lines.append(f"        {arg_name} = [1, 2, 3]")
-            elif "dict" in annotation.lower():
+            elif "dict" in annotation:
                 lines.append(f'        {arg_name} = {{"key": "value"}}')
-            elif "bool" in annotation.lower():
+            elif "bool" in annotation:
                 lines.append(f"        {arg_name} = True")
             else:
                 lines.append(f'        {arg_name} = "test_{arg_name}"')
