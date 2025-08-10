@@ -38,6 +38,14 @@ class ProjectScaffoldingTool(Tool):
                     "type": "string",
                     "description": "Directory path where the project should be created"
                 },
+                "directory": {
+                    "type": "string", 
+                    "description": "Directory path where the project should be created (alias for path)"
+                },
+                "project_name": {
+                    "type": "string",
+                    "description": "Project name (alias for name)"
+                },
                 "name": {
                     "type": "string",
                     "description": "Project name (defaults to directory name)"
@@ -65,7 +73,7 @@ class ProjectScaffoldingTool(Tool):
                     }
                 }
             },
-            "required": ["path"]
+            "required": []
         }
     
     @property
@@ -75,8 +83,15 @@ class ProjectScaffoldingTool(Tool):
     def execute(self, **parameters) -> ToolResult:
         """Create a project scaffold."""
         template = parameters.get("template")
-        path = parameters.get("path")
-        name = parameters.get("name") or os.path.basename(path) if path else None
+        
+        # Handle path parameter aliases
+        path = parameters.get("path") or parameters.get("directory")
+        
+        # Handle name parameter aliases  
+        name = (parameters.get("name") or 
+                parameters.get("project_name") or 
+                (os.path.basename(path) if path else None))
+        
         options = parameters.get("options", {})
         
         # Handle legacy parameter format (framework + language)
@@ -89,7 +104,7 @@ class ProjectScaffoldingTool(Tool):
             return ToolResult(
                 success=False,
                 output=None,
-                error="Either 'template' parameter or both 'framework' and 'language' parameters are required, along with 'path'"
+                error="Either 'template' parameter or both 'framework' and 'language' parameters are required, along with 'path' (or 'directory'). Received parameters: " + str(list(parameters.keys()))
             )
         
         try:
