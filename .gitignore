@@ -18,3 +18,4 @@ eda_notebook/
 
 .agent_learning/
 .anti_patterns.json
+*game/
