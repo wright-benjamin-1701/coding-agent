@@ -20,6 +20,8 @@ A thin, extensible coding agent with RAG (Retrieval-Augmented Generation) and to
 - **Security Vulnerability Scanning**: Detection of secrets, injection risks, crypto issues
 - **Architecture Analysis**: Dependency mapping, circular dependency detection, complexity metrics
 - **Permanent Directive System**: Persistent behavior rules and coding standards
+- **Smart Code Writing**: Analyzes codebase structure and intelligently places new code
+- **Web Interface**: Browser-based prompt submission and session viewing
 - **Enhanced Result Summarization**: Meaningful feedback instead of generic completion messages
 - **Improved User Experience**: Fixed confirmation loops and better error handling
 
@@ -93,10 +95,11 @@ The system is designed with clear separation of concerns:
 ## Available Tools
 
 ### Core Tools
-- **File Operations**: `read_file`, `write_file`, `search_files`
+- **File Operations**: `read_file`, `write_file`, `search_files`, `smart_write_file`
 - **Git Operations**: `git_status`, `git_diff`, `git_commit_hash`
 - **Testing**: `run_tests`, `lint_code`
 - **Analysis**: `brainstorm_search_terms`, `summarize_code`, `analyze_code`
+- **Web Interface**: `web_viewer` - Launch browser-based interface with prompt submission
 
 ### Advanced Development Tools
 - **Code Generation**: `generate_code` - Create boilerplate, templates, and scaffolding
@@ -104,6 +107,7 @@ The system is designed with clear separation of concerns:
 - **Security Scanning**: `security_scan` - Detect vulnerabilities, secrets, injection risks
 - **Architecture Analysis**: `analyze_architecture` - Dependency visualization, complexity metrics
 - **Directive Management**: `manage_directives` - Permanent rules and behavior guidelines
+- **Smart Writing**: `smart_write_file` - Intelligently places code by analyzing existing structure
 
 ## Configuration
 

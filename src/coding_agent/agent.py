@@ -8,6 +8,7 @@ from .providers.ollama import OllamaProvider
 from .prompt_manager import PromptManager
 from .tools.registry import ToolRegistry
 from .tools.file_tools import ReadFileTool, WriteFileTool, SearchFilesTool
+from .tools.smart_write_tool import SmartWriteTool
 from .tools.git_tools import GitStatusTool, GitDiffTool, GitCommitHashTool
 from .tools.brainstorm_tool import BrainstormSearchTermsTool
 from .tools.test_tools import RunTestsTool, LintCodeTool
@@ -67,9 +68,12 @@ class CodingAgent:
     def _register_tools(self):
         """Register all available tools."""
         # File tools (with cache service)
-        self.tool_registry.register(ReadFileTool(self.cache_service))
+        read_tool = ReadFileTool(self.cache_service)
+        search_tool = SearchFilesTool()
+        self.tool_registry.register(read_tool)
         self.tool_registry.register(WriteFileTool())
-        self.tool_registry.register(SearchFilesTool())
+        self.tool_registry.register(search_tool)
+        self.tool_registry.register(SmartWriteTool(self.cache_service, search_tool, read_tool))
         
         # Git tools
         self.tool_registry.register(GitStatusTool())
@@ -98,7 +102,7 @@ class CodingAgent:
         
         # Web viewer tool for debugging AI interactions
         from .tools.web_viewer_tool import WebViewerTool
-        self.tool_registry.register(WebViewerTool())
+        self.tool_registry.register(WebViewerTool(agent_instance=self))
     
     def process_request(self, user_prompt: str) -> str:
         """Process a user request with multi-step planning and execution."""

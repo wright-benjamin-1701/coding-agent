@@ -12,7 +12,8 @@ dependencies = [
     "requests",
     "watchdog", 
     "pydantic",
-    "gitpython"
+    "gitpython",
+    "pyyaml"
 ]
 
 [project.scripts]

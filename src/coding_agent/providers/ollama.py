@@ -55,7 +55,7 @@ class OllamaProvider(ModelProvider):
     def is_available(self) -> bool:
         """Check if Ollama is available."""
         try:
-            response = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            response = requests.get(f"{self.base_url}/api/tags", timeout=90)
             return response.status_code == 200
         except:
             return False
