@@ -37,21 +37,36 @@ pip install -e .
 
 ## Quick Start
 
-1. Run the agent:
+### Option 1: Install and Run from Anywhere
+
+Install the coding agent globally to run from any terminal folder:
 
 ```bash
-python run.py
-```
+# Install in development mode (from the project directory)
+pip install -e .
 
-Or if installed:
-
-```bash
+# Now you can run from any directory
+cd /path/to/your/project
 coding-agent
 ```
 
-2. First run will guide you through configuration setup
+### Option 2: Run from Project Directory
 
-3. Then interact naturally:
+Run directly from the coding-agent project folder:
+
+```bash
+# Using the launcher script (works from project directory)
+python run.py
+
+# Or using the global launcher script
+python coding-agent
+```
+
+### First-Time Setup
+
+1. First run will guide you through configuration setup
+
+2. Then interact naturally:
 
 ```
 🤖 > add error handling to the main function

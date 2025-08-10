@@ -235,9 +235,9 @@ class WebViewerHandler(BaseHTTPRequestHandler):
         """
         
         self.send_response(200)
-        self.send_header('Content-type', 'text/html')
+        self.send_header('Content-type', 'text/html; charset=utf-8')
         self.end_headers()
-        self.wfile.write(html.encode())
+        self.wfile.write(html.encode('utf-8'))
     
     def serve_sessions(self):
         """Serve sessions data as JSON."""
@@ -254,10 +254,10 @@ class WebViewerHandler(BaseHTTPRequestHandler):
                 sessions = [dict(row) for row in cursor.fetchall()]
             
             self.send_response(200)
-            self.send_header('Content-type', 'application/json')
+            self.send_header('Content-type', 'application/json; charset=utf-8')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            self.wfile.write(json.dumps(sessions).encode())
+            self.wfile.write(json.dumps(sessions, ensure_ascii=False).encode('utf-8'))
             
         except Exception as e:
             self.send_error(500, f"Database error: {str(e)}")
@@ -277,10 +277,10 @@ class WebViewerHandler(BaseHTTPRequestHandler):
                     return
             
             self.send_response(200)
-            self.send_header('Content-type', 'application/json')
+            self.send_header('Content-type', 'application/json; charset=utf-8')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            self.wfile.write(json.dumps(dict(session)).encode())
+            self.wfile.write(json.dumps(dict(session), ensure_ascii=False).encode('utf-8'))
             
         except Exception as e:
             self.send_error(500, f"Database error: {str(e)}")
@@ -300,10 +300,10 @@ class WebViewerHandler(BaseHTTPRequestHandler):
                 files = [dict(row) for row in cursor.fetchall()]
             
             self.send_response(200)
-            self.send_header('Content-type', 'application/json')
+            self.send_header('Content-type', 'application/json; charset=utf-8')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            self.wfile.write(json.dumps(files).encode())
+            self.wfile.write(json.dumps(files, ensure_ascii=False).encode('utf-8'))
             
         except Exception as e:
             self.send_error(500, f"Database error: {str(e)}")
@@ -323,10 +323,10 @@ class WebViewerHandler(BaseHTTPRequestHandler):
                 interactions = [dict(row) for row in cursor.fetchall()]
             
             self.send_response(200)
-            self.send_header('Content-type', 'application/json')
+            self.send_header('Content-type', 'application/json; charset=utf-8')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            self.wfile.write(json.dumps(interactions).encode())
+            self.wfile.write(json.dumps(interactions, ensure_ascii=False).encode('utf-8'))
             
         except Exception as e:
             self.send_error(500, f"Database error: {str(e)}")

@@ -2,11 +2,18 @@
 """Main text-based interface for the coding agent."""
 
 import sys
+import os
 from pathlib import Path
 from typing import Optional
 from .agent import CodingAgent
 from .config import ConfigManager
 from .ui import UIHelper
+
+# Set UTF-8 encoding for Windows console
+if os.name == 'nt':
+    import codecs
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.detach())
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.detach())
 
 
 class CodingAgentUI:
@@ -146,6 +153,10 @@ class CodingAgentUI:
                     self.handle_request(user_input)
                 
             except KeyboardInterrupt:
+                print("\n")
+                self.handle_quit()
+            except EOFError:
+                # Handle EOF (non-interactive mode or input redirect)
                 print("\n")
                 self.handle_quit()
             except Exception as e:

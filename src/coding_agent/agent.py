@@ -321,8 +321,9 @@ class CodingAgent:
                 if 'search' in action_desc.lower() and '\n' in result.output:
                     lines = result.output.split('\n')[:10]  # Show first 10 lines
                     output_preview = '\n      '.join(lines)
-                    if len(result.output.split('\n')) > 10:
-                        output_preview += f"\n      ... and {len(result.output.split('\n')) - 10} more lines"
+                    total_lines = len(result.output.split('\n'))
+                    if total_lines > 10:
+                        output_preview += f"\n      ... and {total_lines - 10} more lines"
                 else:
                     # For other outputs, be more generous with length
                     output_preview = result.output[:500] + "..." if len(result.output) > 500 else result.output
