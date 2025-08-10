@@ -78,6 +78,8 @@ python coding-agent
 🤖 > scan for security vulnerabilities
 🤖 > refactor the database connection code
 🤖 > analyze the architecture dependencies
+🤖 > generate tests for my_module.py
+🤖 > create comprehensive tests for the User class
 ```
 
 ## Architecture
@@ -103,6 +105,7 @@ The system is designed with clear separation of concerns:
 
 ### Advanced Development Tools
 - **Code Generation**: `generate_code` - Create boilerplate, templates, and scaffolding
+- **Test Generation**: `generate_tests` - Auto-generate comprehensive tests from existing code
 - **Refactoring**: `refactor_code` - Extract functions, rename variables, move code blocks
 - **Security Scanning**: `security_scan` - Detect vulnerabilities, secrets, injection risks
 - **Architecture Analysis**: `analyze_architecture` - Dependency visualization, complexity metrics
@@ -226,6 +229,7 @@ Example session:
 
 ### Enhanced Tools & Capabilities
 - **Code Generation Tool**: Create boilerplate code for classes, functions, API endpoints, React components, and test files across multiple languages (Python, JavaScript/TypeScript, Java)
+- **Test Generator Tool**: Automatically generate comprehensive tests by analyzing existing code, including unit tests, edge cases, error handling, and mock generation for Python (pytest/unittest) and JavaScript (Jest/Vitest/Mocha)
 - **Refactoring Tool**: Extract functions with intelligent parameter detection, rename variables with scope awareness, move code blocks between files
 - **Security Scanner**: Comprehensive vulnerability detection including hardcoded secrets (API keys, passwords, tokens), SQL injection risks, XSS vulnerabilities, cryptographic weaknesses, and unsafe operations
 - **Architecture Analyzer**: Dependency mapping, circular dependency detection, complexity metrics, design pattern recognition, and code smell identification

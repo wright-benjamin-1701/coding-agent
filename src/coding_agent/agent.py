@@ -18,6 +18,7 @@ from .tools.code_generation_tools import CodeGeneratorTool
 from .tools.refactoring_tools import RefactoringTool
 from .tools.security_tools import SecurityScanTool
 from .tools.architecture_tools import ArchitectureAnalysisTool
+from .tools.test_generator_tool import TestGeneratorTool
 from .orchestrator import PlanOrchestrator
 from .executor import PlanExecutor
 from .database.rag_db import RAGDatabase
@@ -99,6 +100,7 @@ class CodingAgent:
         self.tool_registry.register(RefactoringTool())
         self.tool_registry.register(SecurityScanTool())
         self.tool_registry.register(ArchitectureAnalysisTool())
+        self.tool_registry.register(TestGeneratorTool(self.model_provider, self.cache_service, read_tool, search_tool))
         
         # Web viewer tool for debugging AI interactions
         from .tools.web_viewer_tool import WebViewerTool
