@@ -70,9 +70,34 @@ class SummarizeCodeTool(Tool):
             if not response.content.strip():
                 return ToolResult(success=False, output=None, error="LLM returned empty response")
             
-            return ToolResult(success=True, output=response.content.strip(), action_description=f"LLM summarized {target} with focus on {focus}")
+            # Extract the actual answer (content outside thinking tokens)
+            final_output = self._extract_final_answer(response.content.strip())
+            
+            return ToolResult(success=True, output=final_output, action_description=f"LLM summarized {target} with focus on {focus}")
         except Exception as e:
             return ToolResult(success=False, output=None, error=f"Error summarizing {target}: {str(e)}")
+    
+    def _extract_final_answer(self, text: str) -> str:
+        """Extract the final answer from LLM response, removing thinking tokens."""
+        import re
+        
+        # Remove thinking blocks and get content that comes after
+        # Pattern: remove everything from <think> to </think>
+        text_without_thinking = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        text_without_thinking = re.sub(r'<thinking>.*?</thinking>', '', text_without_thinking, flags=re.DOTALL | re.IGNORECASE)
+        
+        # Clean up any remaining thinking markers
+        text_without_thinking = re.sub(r'</?think>', '', text_without_thinking, flags=re.IGNORECASE)
+        text_without_thinking = re.sub(r'</?thinking>', '', text_without_thinking, flags=re.IGNORECASE)
+        
+        # Clean up whitespace
+        final_text = text_without_thinking.strip()
+        
+        # If we removed everything, return the original (might not have thinking tokens)
+        if not final_text:
+            return text.strip()
+        
+        return final_text
     
     def _gather_codebase_content(self) -> str:
         """Gather key codebase files for LLM analysis."""
@@ -249,9 +274,34 @@ class AnalyzeCodeTool(Tool):
             if not response.content.strip():
                 return ToolResult(success=False, output=None, error="LLM returned empty response")
             
-            return ToolResult(success=True, output=response.content.strip(), action_description=f"LLM analyzed {target} ({analysis_type})")
+            # Extract the actual answer (content outside thinking tokens)
+            final_output = self._extract_final_answer(response.content.strip())
+            
+            return ToolResult(success=True, output=final_output, action_description=f"LLM analyzed {target} ({analysis_type})")
         except Exception as e:
             return ToolResult(success=False, output=None, error=f"Error analyzing {target}: {str(e)}")
+    
+    def _extract_final_answer(self, text: str) -> str:
+        """Extract the final answer from LLM response, removing thinking tokens."""
+        import re
+        
+        # Remove thinking blocks and get content that comes after
+        # Pattern: remove everything from <think> to </think>
+        text_without_thinking = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        text_without_thinking = re.sub(r'<thinking>.*?</thinking>', '', text_without_thinking, flags=re.DOTALL | re.IGNORECASE)
+        
+        # Clean up any remaining thinking markers
+        text_without_thinking = re.sub(r'</?think>', '', text_without_thinking, flags=re.IGNORECASE)
+        text_without_thinking = re.sub(r'</?thinking>', '', text_without_thinking, flags=re.IGNORECASE)
+        
+        # Clean up whitespace
+        final_text = text_without_thinking.strip()
+        
+        # If we removed everything, return the original (might not have thinking tokens)
+        if not final_text:
+            return text.strip()
+        
+        return final_text
     
     def _gather_file_content(self, file_path: str) -> str:
         """Gather content from a specific file for LLM analysis."""

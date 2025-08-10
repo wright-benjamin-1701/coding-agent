@@ -28,14 +28,21 @@ If previous actions have been executed, use their results to decide what to do n
 
 Consider whether this step should be final - if the task appears complete or nearly complete, focus on verification and cleanup actions rather than new exploration.
 
-Example format:
-{
-  "actions": [
-    {"type": "tool_use", "tool_name": "git_status", "parameters": {}},
-    {"type": "tool_use", "tool_name": "read_file", "parameters": {"file_path": "src/main.py"}},
-    {"type": "confirmation", "message": "Continue?", "destructive": false}
-  ]
-}
+IMPORTANT GUIDELINES:
+- Only use confirmation actions for destructive operations (file writes, deletions, git commits)
+- For read-only operations (searches, file reads, git status), do NOT add confirmations
+- Simple information requests should complete without user intervention
+- If the user asked a question and you found the answer, the task is complete
+
+Example formats:
+// For simple read-only tasks (NO confirmation needed):
+{"actions": [{"type": "tool_use", "tool_name": "search_files", "parameters": {"pattern": "class", "path": "src"}}]}
+
+// For destructive operations (confirmation needed):
+{"actions": [
+  {"type": "tool_use", "tool_name": "write_file", "parameters": {"file_path": "test.py", "content": "print('hello')"}},
+  {"type": "confirmation", "message": "Write new file test.py?", "destructive": true}
+]}
 
 Return ONLY the JSON object, no other text or thinking."""
     

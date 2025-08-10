@@ -12,3 +12,4 @@ config.json
 venv/
 
 .coding_agent_config.json
+*results.txt

@@ -88,10 +88,13 @@ class PlanOrchestrator:
         plan_json = self._extract_json(response.content)
         
         if not plan_json:
-            print(f"⚠️  Could not parse JSON from model response")
+            # Don't show confusing JSON error to users, just return empty plan
             return []
         
         actions = self._parse_actions(plan_json.get("actions", []))
+        
+        # Filter out unnecessary confirmations for read-only operations
+        actions = self._filter_unnecessary_confirmations(actions, context)
         
         return actions
     
@@ -156,6 +159,28 @@ class PlanOrchestrator:
             except Exception as e:
                 print(f"Error parsing action {i}: {e}")
                 continue
+        
+        return actions
+    
+    def _filter_unnecessary_confirmations(self, actions: List[Union[ToolAction, ConfirmationAction]], context: Context) -> List[Union[ToolAction, ConfirmationAction]]:
+        """Remove unnecessary confirmation actions for simple read-only operations."""
+        if not actions:
+            return actions
+        
+        # Check if all tool actions are read-only/non-destructive
+        tool_actions = [a for a in actions if hasattr(a, 'tool_name')]
+        read_only_tools = {
+            'read_file', 'search_files', 'git_status', 'git_diff', 'git_commit_hash',
+            'brainstorm_search_terms', 'run_tests', 'lint_code', 'summarize_code', 'analyze_code'
+        }
+        
+        # If all tools are read-only, remove confirmations
+        if tool_actions and all(a.tool_name in read_only_tools for a in tool_actions):
+            # Remove all confirmation actions for read-only operations
+            filtered_actions = [a for a in actions if not isinstance(a, ConfirmationAction)]
+            if filtered_actions != actions:
+                print("🔧 Removed unnecessary confirmations for read-only operation")
+            return filtered_actions
         
         return actions
     

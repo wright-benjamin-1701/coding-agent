@@ -16,6 +16,7 @@ from .orchestrator import PlanOrchestrator
 from .executor import PlanExecutor
 from .database.rag_db import RAGDatabase
 from .indexer.file_indexer import FileIndexer
+from .cache_service import CacheService
 
 
 class CodingAgent:
@@ -31,6 +32,7 @@ class CodingAgent:
         self.prompt_manager = PromptManager()
         self.tool_registry = ToolRegistry()
         self.rag_db = RAGDatabase(self.config.database.db_path)
+        self.cache_service = CacheService(self.rag_db)
         self.file_indexer = FileIndexer(
             root_path=".",
             index_file=self.config.indexer.index_file
@@ -59,8 +61,8 @@ class CodingAgent:
     
     def _register_tools(self):
         """Register all available tools."""
-        # File tools
-        self.tool_registry.register(ReadFileTool())
+        # File tools (with cache service)
+        self.tool_registry.register(ReadFileTool(self.cache_service))
         self.tool_registry.register(WriteFileTool())
         self.tool_registry.register(SearchFilesTool())
         
@@ -120,9 +122,16 @@ class CodingAgent:
                 results = self.executor.execute_plan(plan)
                 all_results.extend(results)
                 
+                # Show immediate results for successful actions
+                self._display_step_results(results)
+                
                 # Check for execution failures
                 if results and not results[-1].success:
-                    print("❌ Execution stopped due to failure or cancellation")
+                    failure_reason = results[-1].error if hasattr(results[-1], 'error') else "Unknown failure"
+                    if "cancelled" in failure_reason.lower():
+                        print(f"⏹️  Execution stopped: {failure_reason}")
+                    else:
+                        print(f"❌ Execution failed: {failure_reason}")
                     break
                 
                 # Intelligent stopping based on plan metadata
@@ -262,17 +271,102 @@ class CodingAgent:
             else:
                 print(f"  {i}. Confirmation: {action.message}")
     
+    def _display_step_results(self, results: List):
+        """Display immediate results from executed actions."""
+        if not results:
+            return
+        
+        successful_count = sum(1 for r in results if hasattr(r, 'success') and r.success)
+        total_count = len(results)
+        
+        if successful_count == total_count:
+            print(f"✅ Step completed successfully ({successful_count}/{total_count})")
+        elif successful_count > 0:
+            print(f"⚠️  Step partially completed ({successful_count}/{total_count})")
+        else:
+            print(f"❌ Step failed ({successful_count}/{total_count})")
+        
+        # Show preview of successful results
+        for i, result in enumerate(results):
+            if hasattr(result, 'success') and result.success and hasattr(result, 'output') and result.output:
+                action_desc = getattr(result, 'action_description', f'Action {i+1}')
+                
+                # Skip confirmation actions in immediate results
+                if "Confirmation:" in action_desc:
+                    continue
+                    
+                # For search results, show more lines and better formatting
+                if 'search' in action_desc.lower() and '\n' in result.output:
+                    lines = result.output.split('\n')[:10]  # Show first 10 lines
+                    output_preview = '\n      '.join(lines)
+                    if len(result.output.split('\n')) > 10:
+                        output_preview += f"\n      ... and {len(result.output.split('\n')) - 10} more lines"
+                else:
+                    # For other outputs, be more generous with length
+                    output_preview = result.output[:500] + "..." if len(result.output) > 500 else result.output
+                
+                print(f"   📄 {action_desc}")
+                if output_preview.strip():
+                    print(f"      {output_preview}")
+                
+                if i >= 2:  # Show max 3 results per step
+                    break
+    
     def _generate_summary(self, user_prompt: str, results: List) -> str:
-        """Generate a 1-2 sentence summary of what was accomplished."""
+        """Generate a meaningful summary of what was accomplished."""
         successful_actions = sum(1 for r in results if hasattr(r, 'success') and r.success)
         total_actions = len(results)
         
+        # Build detailed summary with actual results
+        summary_parts = []
+        
+        # Add completion status
         if successful_actions == 0:
-            return f"Failed to complete request: {user_prompt}"
+            summary_parts.append("❌ No actions completed successfully")
         elif successful_actions == total_actions:
-            return f"Successfully completed: {user_prompt}"
+            summary_parts.append(f"✅ All {total_actions} actions completed successfully")
         else:
-            return f"Partially completed ({successful_actions}/{total_actions} actions): {user_prompt}"
+            summary_parts.append(f"⚠️  {successful_actions}/{total_actions} actions completed")
+        
+        # Add key results from successful actions (excluding confirmations)
+        key_outputs = []
+        for result in results:
+            if hasattr(result, 'success') and result.success and hasattr(result, 'output') and result.output:
+                action_desc = getattr(result, 'action_description', '')
+                
+                # Skip confirmation actions in summary
+                if "Confirmation:" in action_desc:
+                    continue
+                
+                # For search results, provide more meaningful summary with better truncation
+                if 'search' in action_desc.lower() and '\n' in result.output:
+                    lines = result.output.split('\n')
+                    # Show first few meaningful results
+                    meaningful_lines = [line for line in lines[:15] if line.strip() and not line.endswith(':')]
+                    if meaningful_lines:
+                        output_preview = '\n    '.join(meaningful_lines[:8])  # Show up to 8 results
+                        if len(meaningful_lines) > 8:
+                            output_preview += f"\n    ... and {len(meaningful_lines) - 8} more matches"
+                    else:
+                        output_preview = result.output[:600] + "..." if len(result.output) > 600 else result.output
+                else:
+                    output_preview = result.output[:600] + "..." if len(result.output) > 600 else result.output
+                
+                if action_desc:
+                    key_outputs.append(f"  • {action_desc}:\n    {output_preview}")
+                else:
+                    key_outputs.append(f"  • {output_preview}")
+        
+        if key_outputs:
+            summary_parts.append("\nKey Results:")
+            summary_parts.extend(key_outputs[:3])  # Show max 3 results
+            if len(key_outputs) > 3:
+                summary_parts.append(f"  • ... and {len(key_outputs) - 3} more results")
+        
+        # Add request context
+        summary_parts.append(f"\nRequest: {user_prompt}")
+        
+        return "\n".join(summary_parts)
     
     def initialize(self):
         """Initialize the agent (build initial index, check dependencies)."""
@@ -287,6 +381,10 @@ class CodingAgent:
         print("📁 Building file index...")
         updated_files = self.file_indexer.build_full_index()
         print(f"   Indexed {len(updated_files)} files")
+        
+        # Clean up old cache entries
+        print("🗄️  Cleaning up cache...")
+        self.cache_service.cleanup_old_cache()
         
         print("✅ Agent initialized successfully!")
         return True
