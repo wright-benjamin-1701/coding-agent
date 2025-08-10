@@ -8,3 +8,8 @@
 
 ### Bug Fixes
 - [ ] Fix 'NoneType' object has no attribute 'lower' error in request processing
+
+
+tasks: "build a web app for sql database administration that allows me to add and update rows and create tables, and a 
+  database to test it on." and also "build an EDA jupyter notebook that takes in ANY dataframe and gives basic statistics, 
+  determines appropriate regressions to run, and then shows some insights"
