@@ -60,6 +60,11 @@ class ProjectScaffoldingTool(Tool):
                     "description": "Programming language (legacy parameter - use template instead)",
                     "enum": ["javascript", "typescript", "python"]
                 },
+                "variant": {
+                    "type": "string",
+                    "description": "Language variant (alias for language)",
+                    "enum": ["javascript", "typescript", "python"]
+                },
                 "options": {
                     "type": "object",
                     "description": "Additional template options",
