@@ -99,11 +99,15 @@ class ProjectScaffoldingTool(Tool):
         
         options = parameters.get("options", {})
         
-        # Handle legacy parameter format (framework + language)
+        # Handle legacy parameter format (framework + language/variant)
         if not template:
             framework = parameters.get("framework")
-            language = parameters.get("language")
+            language = parameters.get("language") or parameters.get("variant")
             template = self._map_legacy_params_to_template(framework, language)
+        
+        # Set default path if missing but we have project_name
+        if not path and name:
+            path = name
         
         if not template or not path:
             return ToolResult(
