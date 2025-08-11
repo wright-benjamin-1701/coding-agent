@@ -132,6 +132,18 @@ class CodingAgent:
         # Project scaffolding tool
         from .tools.project_scaffolding_tool import ProjectScaffoldingTool
         self.tool_registry.register(ProjectScaffoldingTool())
+        
+        # Add modify_file alias for WriteFileTool
+        class ModifyFileTool(WriteFileTool):
+            @property
+            def name(self) -> str:
+                return "modify_file"
+            
+            @property
+            def description(self) -> str:
+                return "Modify or edit existing files (alias for write_file)"
+        
+        self.tool_registry.register(ModifyFileTool())
         self.tool_registry.register(RefactoringTool())
         self.tool_registry.register(SecurityScanTool())
         self.tool_registry.register(ArchitectureAnalysisTool())
@@ -409,7 +421,7 @@ class CodingAgent:
     
     def _calculate_max_steps(self, context: Context) -> int:
         """Calculate adaptive maximum steps based on task complexity."""
-        base_steps = 5
+        base_steps = 10
         
         # Increase steps for complex requests
         complexity_keywords = ['refactor', 'implement', 'create', 'build', 'design', 'test', 'debug']

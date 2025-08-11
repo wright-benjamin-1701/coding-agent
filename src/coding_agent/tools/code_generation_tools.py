@@ -162,16 +162,19 @@ class CodeGeneratorTool(Tool):
             # Optionally write to file
             if file_path:
                 try:
-                    # Ensure directory exists
-                    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                    # Resolve project path (same logic as WriteFileTool)
+                    resolved_path = self._resolve_project_path(file_path)
                     
-                    with open(file_path, 'w', encoding='utf-8') as f:
+                    # Ensure directory exists
+                    os.makedirs(os.path.dirname(resolved_path), exist_ok=True)
+                    
+                    with open(resolved_path, 'w', encoding='utf-8') as f:
                         f.write(generated_code)
                     
                     return ToolResult(
                         success=True,
                         output=f"Generated {template} code:\n\n{generated_code}",
-                        action_description=f"Generated {template} code and saved to {file_path}"
+                        action_description=f"Generated {template} code and saved to {resolved_path}"
                     )
                 except Exception as e:
                     return ToolResult(
@@ -569,3 +572,45 @@ app.listen(PORT, () => {{
             return f"src/{name.lower()}{ext}"
         else:
             return f"src/{name.lower()}{ext}"
+    
+    def _resolve_project_path(self, file_path: str) -> str:
+        """Resolve file path, checking for recent project directories."""
+        # If path is already absolute, use as-is
+        if os.path.isabs(file_path):
+            return file_path
+        
+        # Look for recently created project directories first
+        current_dir = os.getcwd()
+        potential_projects = []
+        
+        try:
+            for item in os.listdir(current_dir):
+                item_path = os.path.join(current_dir, item)
+                if os.path.isdir(item_path):
+                    # Check if this looks like a recently created project
+                    if any(os.path.exists(os.path.join(item_path, f)) for f in ['package.json', 'tsconfig.json', 'vite.config.ts']):
+                        potential_projects.append(item)
+            
+            # Sort by modification time (most recent first)
+            potential_projects.sort(key=lambda p: os.path.getmtime(os.path.join(current_dir, p)), reverse=True)
+            
+            # If we find potential projects, check if the file path makes sense relative to them
+            for project in potential_projects:
+                candidate_path = os.path.join(current_dir, project, file_path)
+                candidate_dir = os.path.dirname(candidate_path)
+                
+                # Check if this could be a valid project file path
+                if file_path.startswith('src/') and os.path.exists(os.path.join(current_dir, project, 'src')):
+                    return candidate_path
+                elif os.path.exists(candidate_dir):
+                    return candidate_path
+                    
+        except Exception:
+            pass  # If directory scanning fails, fall back to checking current dir
+        
+        # If the relative path exists from current directory, use it
+        if os.path.exists(file_path) or os.path.exists(os.path.dirname(file_path)):
+            return file_path
+        
+        # Return original path as fallback
+        return file_path

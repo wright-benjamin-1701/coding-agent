@@ -88,27 +88,13 @@ class ProjectScaffoldingTool(Tool):
     
     def execute(self, **parameters) -> ToolResult:
         """Create a project scaffold."""
-        template = parameters.get("template")
+        # Universal parameter mapping - handles ALL variations the agent might use
+        mapped_params = self._map_all_parameters(parameters)
         
-        # Handle path parameter aliases
-        path = parameters.get("path") or parameters.get("directory")
-        
-        # Handle name parameter aliases  
-        name = (parameters.get("name") or 
-                parameters.get("project_name") or 
-                (os.path.basename(path) if path else None))
-        
-        options = parameters.get("options", {})
-        
-        # Handle legacy parameter format (framework + language/variant)
-        if not template:
-            framework = parameters.get("framework")
-            language = parameters.get("language") or parameters.get("variant")
-            template = self._map_legacy_params_to_template(framework, language)
-        
-        # Normalize template name (handle short forms)
-        if template:
-            template = self._normalize_template_name(template)
+        template = mapped_params.get("template")
+        path = mapped_params.get("path")
+        name = mapped_params.get("name") 
+        options = mapped_params.get("options", {})
         
         # Set default path if missing but we have project_name
         if not path and name:
@@ -208,6 +194,142 @@ class ProjectScaffoldingTool(Tool):
         }
         
         return short_to_full.get(template, template)
+    
+    def _map_all_parameters(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Universal parameter mapper that handles ALL agent variations."""
+        mapped = {}
+        
+        # PATH MAPPING - all possible path parameter names
+        path_aliases = ["path", "directory", "dir", "folder", "location", "target", "dest"]
+        mapped["path"] = None
+        for alias in path_aliases:
+            if parameters.get(alias):
+                mapped["path"] = parameters[alias]
+                break
+        
+        # NAME MAPPING - all possible name parameter names  
+        name_aliases = ["name", "project_name", "projectname", "project", "title"]
+        mapped["name"] = None
+        for alias in name_aliases:
+            if parameters.get(alias):
+                mapped["name"] = parameters[alias]
+                break
+        
+        # Extract name from path if no explicit name
+        if not mapped["name"] and mapped["path"]:
+            mapped["name"] = os.path.basename(mapped["path"])
+        
+        # TEMPLATE MAPPING - all possible template/type parameter names
+        template_aliases = ["template", "project_type", "type", "kind", "framework", "tech"]
+        mapped["template"] = None
+        for alias in template_aliases:
+            if parameters.get(alias):
+                mapped["template"] = parameters[alias]
+                break
+        
+        # LANGUAGE MAPPING - all possible language parameter names
+        language_aliases = ["language", "lang", "variant", "version", "tech_variant"]
+        language = None
+        for alias in language_aliases:
+            if parameters.get(alias):
+                language = parameters[alias]
+                break
+        
+        # SMART TEMPLATE RESOLUTION
+        # If we have a template but also language info, try to combine them intelligently
+        if mapped["template"] and language:
+            template_lower = mapped["template"].lower()
+            language_lower = language.lower()
+            
+            # Handle cases where template + language should combine
+            if template_lower in ["react", "vite", "typescript", "javascript"] and language_lower in ["typescript", "javascript"]:
+                if language_lower == "typescript":
+                    mapped["template"] = "vite-react-ts"
+                else:
+                    mapped["template"] = "vite-react-js"
+            elif template_lower == "react-ts" or (template_lower == "react" and language_lower == "typescript"):
+                mapped["template"] = "vite-react-ts"
+            elif template_lower == "react-js" or (template_lower == "react" and language_lower == "javascript"):
+                mapped["template"] = "vite-react-js"
+            else:
+                # Use existing logic for direct template mapping
+                template_mapping = {
+                    "react": "vite-react-js",
+                    "react-ts": "vite-react-ts", 
+                    "react-js": "vite-react-js",
+                    "typescript": "vite-react-ts",
+                    "javascript": "vite-react-js",
+                    "vite": "vite-react-js",
+                    "nextjs": "nextjs-js",
+                    "vue": "vue-js",
+                    "express": "express-js",
+                    "fastapi": "fastapi-python",
+                    "flask": "flask-python",
+                    "django": "django-python",
+                    "node": "nodejs-js",
+                    "nodejs": "nodejs-js"
+                }
+                
+                template_key = mapped["template"].lower()
+                if template_key in template_mapping:
+                    mapped["template"] = template_mapping[template_key]
+                else:
+                    # Use normalize method for other cases
+                    mapped["template"] = self._normalize_template_name(mapped["template"])
+        elif mapped["template"]:
+            # Handle direct template mapping without language
+            template_mapping = {
+                "react": "vite-react-js",
+                "react-ts": "vite-react-ts", 
+                "react-js": "vite-react-js",
+                "typescript": "vite-react-ts",
+                "javascript": "vite-react-js",
+                "vite": "vite-react-js",
+                "nextjs": "nextjs-js",
+                "vue": "vue-js",
+                "express": "express-js",
+                "fastapi": "fastapi-python",
+                "flask": "flask-python",
+                "django": "django-python",
+                "node": "nodejs-js",
+                "nodejs": "nodejs-js"
+            }
+            
+            template_key = mapped["template"].lower()
+            if template_key in template_mapping:
+                mapped["template"] = template_mapping[template_key]
+            else:
+                # Use normalize method for other cases
+                mapped["template"] = self._normalize_template_name(mapped["template"])
+        
+        # If still no template, try framework + language combination
+        if not mapped["template"]:
+            framework = (parameters.get("framework") or 
+                        parameters.get("project_type") or 
+                        parameters.get("type") or
+                        "react")  # default
+            
+            # Use the language we found earlier in the language mapping section
+            if not language:
+                language = "javascript"  # default
+                
+            mapped["template"] = self._map_legacy_params_to_template(framework, language)
+        
+        # Final fallback
+        if not mapped["template"]:
+            mapped["template"] = "vite-react-js"
+        
+        # Set default path if missing
+        if not mapped["path"] and mapped["name"]:
+            mapped["path"] = mapped["name"]
+        elif not mapped["path"]:
+            mapped["path"] = "new-project"
+            mapped["name"] = "new-project"
+        
+        # Options handling
+        mapped["options"] = parameters.get("options", {})
+        
+        return mapped
     
     def _generate_project_scaffold(self, template: str, project_path: Path, name: str, options: Dict[str, Any]) -> List[str]:
         """Generate project files based on template."""
