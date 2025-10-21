@@ -3,7 +3,7 @@
 import subprocess
 import time
 from typing import List, Dict, Any
-from .types import Context
+from .types import Context, ConfirmationAction, ToolResult
 from .config import ConfigManager, AgentConfig
 from .providers.ollama import OllamaProvider
 from .prompt_manager import PromptManager

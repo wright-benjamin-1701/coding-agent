@@ -32,24 +32,10 @@ class PlanExecutor:
 
         for action in plan.actions:
             if isinstance(action, ConfirmationAction):
-                # Handle confirmation actions
-                confirmed = self._request_confirmation(action)
-                if not confirmed:
-                    results.append(ToolResult(
-                        success=False, 
-                        output=None, 
-                        error="User cancelled action",
-                        action_description=f"Confirmation: {action.message}"
-                    ))
-                    break
-                else:
-                    results.append(ToolResult(
-                        success=True, 
-                        output="Confirmed",
-                        action_description=f"Confirmation: {action.message}"
-                    ))
-            
-            elif isinstance(action, ToolAction):
+                # Skip old-style confirmation actions - confirmation is now handled upfront in agent.py
+                continue
+
+            if isinstance(action, ToolAction):
                 # Generate hash for this action
                 action_hash = self._generate_action_hash(action)
 

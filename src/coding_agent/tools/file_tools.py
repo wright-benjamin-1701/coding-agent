@@ -86,7 +86,7 @@ class WriteFileTool(Tool):
     
     @property
     def is_destructive(self) -> bool:
-        return False  # Creating new files with unused filenames is not destructive
+        return True  # Writing files requires confirmation
     
     def execute(self, **parameters) -> ToolResult:
         """Write to a file."""
