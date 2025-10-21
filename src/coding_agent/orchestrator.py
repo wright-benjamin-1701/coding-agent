@@ -22,7 +22,7 @@ class PlanOrchestrator:
         self.config = config
         self.prompt_enhancer = PromptEnhancer(rag_db, cache_service, file_indexer) if config and config.prompt_enhancement.enabled else None
     
-    def generate_plan(self, context: Context, previous_results: List = None, step: int = 1) -> Plan:
+    def generate_plan(self, context: Context, previous_results: List = None, step: int = 1, completed_actions: set = None) -> Plan:
         """Generate an execution plan for the user request."""
         # Step 1: Apply hardcoded pre-actions (only on first iteration)
         if previous_results is None:
@@ -31,7 +31,7 @@ class PlanOrchestrator:
             pre_actions = []
         
         # Step 2: Generate LLM plan (with previous results if available)
-        llm_actions = self._generate_llm_plan(context, previous_results, step)
+        llm_actions = self._generate_llm_plan(context, previous_results, step, completed_actions)
         
         # Step 3: Add validation step for complex tasks if needed
         validation_actions = self._get_validation_actions(context, previous_results, step)
@@ -164,7 +164,7 @@ class PlanOrchestrator:
         
         return deliverables
     
-    def _generate_llm_plan(self, context: Context, previous_results: List = None, step: int = 1) -> List[Union[ToolAction, ConfirmationAction]]:
+    def _generate_llm_plan(self, context: Context, previous_results: List = None, step: int = 1, completed_actions: set = None) -> List[Union[ToolAction, ConfirmationAction]]:
         """Generate plan using LLM."""
         # Check if model provider is available first
         if not self.model_provider.is_available():
@@ -222,10 +222,14 @@ class PlanOrchestrator:
             return []
         
         actions = self._parse_actions(plan_json.get("actions", []))
-        
+
         # Filter out unnecessary confirmations for read-only operations
         actions = self._filter_unnecessary_confirmations(actions, context)
-        
+
+        # Filter out actions that were already completed (if tracking provided)
+        if completed_actions:
+            actions = self._filter_completed_actions(actions, completed_actions)
+
         return actions
     
     def _extract_json(self, text: str) -> Dict[str, Any]:
@@ -296,14 +300,14 @@ class PlanOrchestrator:
         """Remove unnecessary confirmation actions for simple read-only operations."""
         if not actions:
             return actions
-        
+
         # Check if all tool actions are read-only/non-destructive
         tool_actions = [a for a in actions if hasattr(a, 'tool_name')]
         read_only_tools = {
             'read_file', 'search_files', 'git_status', 'git_diff', 'git_commit_hash',
             'brainstorm_search_terms', 'run_tests', 'lint_code', 'summarize_code', 'analyze_code'
         }
-        
+
         # If all tools are read-only, remove confirmations
         if tool_actions and all(a.tool_name in read_only_tools for a in tool_actions):
             # Remove all confirmation actions for read-only operations
@@ -311,8 +315,40 @@ class PlanOrchestrator:
             if filtered_actions != actions:
                 print("🔧 Removed unnecessary confirmations for read-only operation")
             return filtered_actions
-        
+
         return actions
+
+    def _filter_completed_actions(self, actions: List[Union[ToolAction, ConfirmationAction]], completed_hashes: set) -> List[Union[ToolAction, ConfirmationAction]]:
+        """Filter out actions that have already been completed."""
+        import hashlib
+        import json
+
+        filtered_actions = []
+        removed_count = 0
+
+        for action in actions:
+            if isinstance(action, ToolAction):
+                # Generate hash for this action
+                action_dict = {
+                    "tool_name": action.tool_name,
+                    "parameters": action.parameters
+                }
+                action_json = json.dumps(action_dict, sort_keys=True)
+                action_hash = hashlib.md5(action_json.encode()).hexdigest()
+
+                # Only include if not already completed
+                if action_hash not in completed_hashes:
+                    filtered_actions.append(action)
+                else:
+                    removed_count += 1
+            else:
+                # Keep confirmation actions (they'll be filtered separately if needed)
+                filtered_actions.append(action)
+
+        if removed_count > 0:
+            print(f"🔧 Filtered out {removed_count} already-completed action(s)")
+
+        return filtered_actions
     
     def _analyze_plan(self, actions: List[Union[ToolAction, ConfirmationAction]], 
                      previous_results: List = None, step: int = 1, context: Context = None) -> PlanMetadata:

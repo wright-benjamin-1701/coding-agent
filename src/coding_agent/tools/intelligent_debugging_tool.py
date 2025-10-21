@@ -659,7 +659,7 @@ class IntelligentDebuggingTool(Tool):
                 flow_data = self._track_variable_flow(code_file, variable_name)
                 
                 if flow_data.get('error'):
-                    return ToolResult(success=False, error=flow_data['error'])
+                    return ToolResult(success=False, output=None, error=flow_data['error'])
                 
                 result_parts.append(f"📈 **Variable Flow Analysis for '{variable_name}':**")
                 
@@ -700,7 +700,7 @@ class IntelligentDebuggingTool(Tool):
                 analysis = self._run_code_analysis(code_file)
                 
                 if analysis.get('error'):
-                    return ToolResult(success=False, error=analysis['error'])
+                    return ToolResult(success=False, output=None, error=analysis['error'])
                 
                 result_parts.append(f"🔬 **Code Analysis for {Path(code_file).name}:**")
                 

@@ -196,9 +196,14 @@ class CodingAgent:
             while step <= max_steps:
                 print(f"🔄 Generating execution plan (step {step})...")
                 
-                # Generate plan with step information
+                # Generate plan with step information and completed actions
                 filtered_results = self._filter_results_for_context(all_results, step)
-                plan = self.orchestrator.generate_plan(context, filtered_results, step)
+                plan = self.orchestrator.generate_plan(
+                    context,
+                    filtered_results,
+                    step,
+                    self.executor.completed_action_hashes
+                )
                 
                 # Handle empty plans
                 if not plan.actions:

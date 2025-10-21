@@ -1,6 +1,8 @@
 """Plan executor for running tool execution loops."""
 
-from typing import List, Dict, Any
+import hashlib
+import json
+from typing import List, Dict, Any, Set
 from .types import Plan, ToolAction, ConfirmationAction, ToolResult
 from .tools.registry import ToolRegistry
 from .config import AgentConfig
@@ -8,16 +10,26 @@ from .config import AgentConfig
 
 class PlanExecutor:
     """Executes plans by running tools in sequence."""
-    
+
     def __init__(self, tool_registry: ToolRegistry, config: AgentConfig = None):
         self.tool_registry = tool_registry
         self.config = config
         self.execution_log: List[Dict[str, Any]] = []
+        self.completed_action_hashes: Set[str] = set()  # Track completed destructive actions
     
+    def _generate_action_hash(self, action: ToolAction) -> str:
+        """Generate a unique hash for an action based on tool name and parameters."""
+        action_dict = {
+            "tool_name": action.tool_name,
+            "parameters": action.parameters
+        }
+        action_json = json.dumps(action_dict, sort_keys=True)
+        return hashlib.md5(action_json.encode()).hexdigest()
+
     def execute_plan(self, plan: Plan) -> List[ToolResult]:
         """Execute a plan and return results."""
         results = []
-        
+
         for action in plan.actions:
             if isinstance(action, ConfirmationAction):
                 # Handle confirmation actions
@@ -38,6 +50,19 @@ class PlanExecutor:
                     ))
             
             elif isinstance(action, ToolAction):
+                # Generate hash for this action
+                action_hash = self._generate_action_hash(action)
+
+                # Check if this exact action was already completed
+                if action_hash in self.completed_action_hashes:
+                    # Skip this action - it was already done
+                    results.append(ToolResult(
+                        success=True,
+                        output="Action already completed in previous step",
+                        action_description=f"Skipped (already done): {action.tool_name}"
+                    ))
+                    continue
+
                 # Check if tool is destructive and needs confirmation
                 tool_confirmed = True  # Default to confirmed for non-destructive tools
                 try:
@@ -48,8 +73,8 @@ class PlanExecutor:
                         tool_confirmed = self._request_confirmation_for_tool(confirmation_message)
                         if not tool_confirmed:
                             results.append(ToolResult(
-                                success=False, 
-                                output=None, 
+                                success=False,
+                                output=None,
                                 error="User cancelled destructive action",
                                 action_description=f"Cancelled: {action.tool_name}"
                             ))
@@ -57,21 +82,25 @@ class PlanExecutor:
                 except Exception:
                     # Tool doesn't exist, will be handled in _execute_tool_action
                     pass
-                
+
                 # Only execute tool action if confirmed (or non-destructive)
                 if tool_confirmed:
                     result = self._execute_tool_action(action)
                     results.append(result)
-                    
+
+                    # Mark this action as completed if successful
+                    if result.success:
+                        self.completed_action_hashes.add(action_hash)
+
                     # Show tool output if configured
                     self._maybe_show_tool_output(action.tool_name, result)
-                    
+
                     # Log execution
                     self.execution_log.append({
                         "action": action.dict(),
                         "result": result.dict()
                     })
-                    
+
                     # Stop on failure unless it's a non-critical tool
                     if not result.success and self._is_critical_tool(action.tool_name):
                         break
