@@ -217,11 +217,22 @@ class CodingAgent:
                 
                 # Show plan with metadata to user
                 self._display_plan(plan, step)
-                
+
                 # Check intelligent stopping conditions
                 if plan.metadata and plan.metadata.is_final:
                     print(f"🎯 Plan indicates final step: {plan.metadata.reasoning}")
-                
+
+                # Check if plan contains destructive actions and request confirmation BEFORE execution
+                if not self._confirm_destructive_actions(plan):
+                    results = [ToolResult(
+                        success=False,
+                        output=None,
+                        error="User cancelled execution",
+                        action_description="Plan execution cancelled by user"
+                    )]
+                    all_results.extend(results)
+                    break
+
                 # Execute plan
                 print(f"\n⚡ Executing plan step {step}...")
                 results = self.executor.execute_plan(plan)
@@ -463,16 +474,46 @@ class CodingAgent:
         filtered = recent_results + error_results
         return filtered if filtered else all_results
     
+    def _confirm_destructive_actions(self, plan) -> bool:
+        """Check if plan contains destructive actions and request confirmation BEFORE execution."""
+        # Check for auto-continue setting
+        if self.config and self.config.execution.auto_continue:
+            return True
+
+        # Check if any actions are destructive
+        has_destructive = False
+        for action in plan.actions:
+            if isinstance(action, ConfirmationAction):
+                # Skip old-style confirmation actions
+                continue
+            if hasattr(action, 'tool_name'):
+                try:
+                    tool = self.tool_registry.get_tool(action.tool_name)
+                    if tool.is_destructive:
+                        has_destructive = True
+                        break
+                except Exception:
+                    pass
+
+        # If no destructive actions, no confirmation needed
+        if not has_destructive:
+            return True
+
+        # Request confirmation
+        print("\n⚠️  This plan contains destructive actions that will modify files or system state.")
+        response = input("Continue? (y/N): ").strip().lower()
+        return response in ['y', 'yes']
+
     def _display_plan(self, plan, step: int):
         """Display plan with metadata information."""
         print(f"\n📋 Plan Step {step} ({len(plan.actions)} actions)")
-        
+
         if plan.metadata:
             confidence_emoji = "🟢" if plan.metadata.confidence > 0.8 else "🟡" if plan.metadata.confidence > 0.5 else "🔴"
             print(f"   {confidence_emoji} Confidence: {plan.metadata.confidence:.1f} | Final: {plan.metadata.is_final} | Follow-up: {plan.metadata.expected_follow_up}")
             if plan.metadata.reasoning:
                 print(f"   💭 {plan.metadata.reasoning}")
-        
+
         for i, action in enumerate(plan.actions, 1):
             if hasattr(action, 'tool_name'):
                 print(f"  {i}. {action.tool_name}: {action.parameters}")
