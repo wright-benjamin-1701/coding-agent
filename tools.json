@@ -1,0 +1,148 @@
+[
+  {
+    "name": "explain_steps",
+    "description": "Explain the plan and steps to the user (always first)",
+    "destructive": false,
+    "params": {
+      "explanation": {
+        "type": "string",
+        "description": "Detailed explanation of the plan"
+      }
+    }
+  },
+  {
+    "name": "summarize_and_suggest",
+    "description": "Summarize changes and add a follow-up suggestion (always last)",
+    "destructive": false,
+    "params": {
+      "summary": {
+        "type": "string",
+        "description": "Summary of what was done and how it fits recent progress"
+      },
+      "suggestion": {
+        "type": "string",
+        "description": "Follow-up suggestion for the user"
+      }
+    }
+  },
+  {
+    "name": "read_file",
+    "description": "Read contents of a file",
+    "destructive": false,
+    "params": {
+      "path": { "type": "string", "description": "File path to read" }
+    }
+  },
+  {
+    "name": "replace_function",
+    "description": "Replace an entire function by name. Automatically fixes indentation for Python and C-style languages (JS, TS, Java, Go, C, C++, C#).",
+    "destructive": true,
+    "params": {
+      "path": { "type": "string", "description": "File path to edit" },
+      "function_name": {
+        "type": "string",
+        "description": "Name of function to replace"
+      },
+      "new_code": {
+        "type": "string",
+        "description": "Complete new function implementation"
+      }
+    }
+  },
+  {
+    "name": "insert_after_line",
+    "description": "Insert content after a line containing search text",
+    "destructive": true,
+    "params": {
+      "path": { "type": "string", "description": "File path to edit" },
+      "search_line": {
+        "type": "string",
+        "description": "Text to find in a line"
+      },
+      "new_content": { "type": "string", "description": "Content to insert" }
+    }
+  },
+  {
+    "name": "replace_between_markers",
+    "description": "Replace content between two marker strings",
+    "destructive": true,
+    "params": {
+      "path": { "type": "string", "description": "File path to edit" },
+      "start_marker": { "type": "string", "description": "Start marker text" },
+      "end_marker": { "type": "string", "description": "End marker text" },
+      "new_content": { "type": "string", "description": "Replacement content" }
+    }
+  },
+  {
+    "name": "create_file",
+    "description": "Create a NEW file. Use only when creating new files.",
+    "destructive": true,
+    "params": {
+      "path": { "type": "string", "description": "File path to write" },
+      "content": { "type": "string", "description": "Content to write" }
+    }
+  },
+  {
+    "name": "search_code",
+    "description": "Search for code patterns in indexed files",
+    "destructive": false,
+    "params": {
+      "query": { "type": "string", "description": "Search query" }
+    }
+  },
+  {
+    "name": "respond_to_user",
+    "description": "Provide a text response to the user (for questions, clarifications, or information)",
+    "destructive": false,
+    "params": {
+      "message": {
+        "type": "string",
+        "description": "The message to display to the user"
+      }
+    }
+  },
+  {
+    "name": "list_files",
+    "description": "List git-tracked files matching a glob pattern (e.g., '**/*.py', '*.js', 'src/**/*.ts')",
+    "destructive": false,
+    "params": {
+      "pattern": {
+        "type": "string",
+        "description": "Glob pattern to match files (default: '**/*.py')"
+      }
+    }
+  },
+  {
+    "name": "show_history",
+    "description": "Show recent change history with change IDs",
+    "destructive": false,
+    "params": {
+      "limit": {
+        "type": "integer",
+        "description": "Number of recent changes to show (default 10)"
+      }
+    }
+  },
+  {
+    "name": "undo",
+    "description": "Undo the most recent change or a specific change by ID",
+    "destructive": true,
+    "params": {
+      "change_id": {
+        "type": "integer",
+        "description": "Optional: specific change ID to undo (from show_history)"
+      }
+    }
+  },
+  {
+    "name": "redo",
+    "description": "Redo a previously undone change",
+    "destructive": true,
+    "params": {
+      "change_id": {
+        "type": "integer",
+        "description": "Optional: specific change ID to redo"
+      }
+    }
+  }
+]

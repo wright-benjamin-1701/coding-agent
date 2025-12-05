@@ -1,0 +1,6 @@
+{
+  "model": "qwen3:14b",
+  "base_url": "http://localhost:11434",
+  "db_name": "index.db",
+  "temperature": 0.1
+}
